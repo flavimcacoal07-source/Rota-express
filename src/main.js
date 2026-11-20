@@ -32,7 +32,7 @@ const configs = {
  trips:{title:'Viagens',table:'trips',fields:[
   ['driver_id','Motorista','select',true,'drivers'],['origin_city','Cidade de origem','text',true],['origin_state','UF origem','text',true],
   ['destination_city','Cidade destino','text',true],['destination_state','UF destino','text',true],['trip_date','Data da viagem','date',true],
-  ['freight_gross','Frete bruto (R$)','number',true,'0'],['distance_km','Distância (km)','number'],['truck_id','Caminhão','select',true,'trucks'],['trailer_id','Carreta','select',false,'trailers'],['toll_mode','Pedágio','select',false,'toll'],
+  ['freight_gross','Frete bruto (R$)','number',true,'0'],['distance_km','Distância (km)','number'],['truck_id','Caminhão','select',true,'trucks'],['trailer_id','Carreta','select',false,'trailers'],['toll_mode','Pedágio','select',true,'toll'],
   ['toll_amount','Valor pedágio (R$)','number'],['notes','Observações','textarea']
  ],cols:['trip_date','driver_id','origin_city','destination_city','freight_gross','status']},
  fuelings:{title:'Abastecimentos',table:'fuelings',fields:[
@@ -67,7 +67,7 @@ function showSetup(){
  app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>O aplicativo precisa das duas variáveis públicas do Supabase para habilitar o acesso.</p></section><section class="login-panel"><div class="login-card"><span class="eyebrow gold">CONFIGURAÇÃO NECESSÁRIA</span><h2>Conecte o projeto Supabase</h2><p class="muted">Configure estas variáveis no ambiente de execução (ou nas variáveis de ambiente da Vercel):</p><p><b>VITE_SUPABASE_URL</b><br><code>https://vbxkuntxukparvemwuqp.supabase.co</code></p><p><b>VITE_SUPABASE_PUBLISHABLE_KEY</b><br><code>Chave sb_publishable_… do projeto</code></p><p class="notice">Use somente a chave publishable ou anon. Nunca use service_role ou uma chave secreta no navegador.</p><p class="small-note">Depois de salvar as variáveis, gere uma nova execução/build da aplicação.</p></div></section></div>`;
 }
 function showLogin(message=''){
- app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
+ app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required value="flavimcacoal70@gmail.com" placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
  $('#login').addEventListener('submit',login);
  $('#forgot').addEventListener('click',forgotPassword);
 }
@@ -87,7 +87,7 @@ async function boot(){
  profile=p;renderShell();await loadPage();
 }
 function renderShell(){
- const nav=Object.entries(labels).map(([key,name])=>`<button class="nav-item ${current===key?'active':''}" data-page="${key}"><span class="nav-icon">${icons[key]||'·'}</span>${name}</button>`).join('');
+ const nav=Object.entries(labels).filter(([key])=>key!=='dashboard').map(([key,name])=>`<button class="nav-item ${current===key?'active':''}" data-page="${key}"><span class="nav-icon">${icons[key]||'·'}</span>${name}</button>`).join('');
  app.innerHTML=`<div class="app-shell"><aside class="sidebar" id="sidebar"><div class="side-brand"><div class="brand-mark small">RE</div><div><b>ROTA <span>EXPRESS</span></b><small>GESTÃO DE TRANSPORTE</small></div></div><div class="side-label">MENU PRINCIPAL</div><nav>${`<button class="nav-item ${current==='dashboard'?'active':''}" data-page="dashboard"><span class="nav-icon">⌂</span>Visão geral</button>`}${nav}</nav><div class="side-bottom"><div class="connection"><i></i>Banco de dados conectado</div><div class="user-mini"><div class="avatar">${esc((profile.full_name||'G').slice(0,1).toUpperCase())}</div><div><b>${esc(profile.full_name)}</b><small>Gestor</small></div></div><button class="logout" id="logout">↪ Sair da conta</button></div></aside><main class="main-area"><header class="topbar"><button class="menu-toggle" id="menu">☰</button><div><div class="eyebrow gold">ROTA EXPRESS</div><div class="top-title">${labels[current]||'Visão geral'}</div></div><div class="top-right"><span class="role-pill">GESTOR</span><span class="today">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</span></div></header><section class="content" id="content"><div class="loading">Carregando dados…</div></section></main></div><div id="modal-root"></div>`;
  $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
  $('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();session=null;profile=null;showLogin()});
@@ -206,7 +206,13 @@ async function saveForm(e,key){
  e.preventDefault();const form=e.currentTarget;const cfg=configs[key];const data={};
  for(const f of cfg.fields){const [name,,type]=f;const el=form.elements[name];if(!el)continue;let v=type==='checkbox'?el.checked:el.value;if(type==='number')v=v===''?null:Number(v);else if(v==='')v=null;data[name]=v}
  if(key==='drivers')data.commission_percent??=15;
- if(key==='trips'){data.created_by=session.user.id;data.status='rascunho';data.origin_state=data.origin_state?.toUpperCase();data.destination_state=data.destination_state?.toUpperCase()}
+ if(key==='trips'){
+  data.created_by=session.user.id;data.status='rascunho';data.origin_state=data.origin_state?.toUpperCase();data.destination_state=data.destination_state?.toUpperCase();
+  const driver=cache.drivers?.find(x=>x.id===data.driver_id);
+  data.commission_percent_snapshot=driver?.commission_percent??null;
+  if(data.toll_mode==='a_parte')data.toll_amount=null;
+  if(data.toll_mode==='por_conta_da_empresa'&&data.toll_amount===null){$('#form-error').textContent='Informe o valor do pedágio pago pela empresa.';return}
+ }
  if(key==='fuelings')data.total_amount=Number(data.liters||0)*Number(data.unit_price||0);
  if(['driver_advances','maintenance_records'].includes(key))data.created_by=session.user.id;
  if(key==='advance_settlements')data.created_by=session.user.id;
