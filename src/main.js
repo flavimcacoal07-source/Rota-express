@@ -132,6 +132,17 @@ async function loadPage(){
   if(current==='finance'){await financeDashboard(host);return}
   const cfg=configs[current];if(!cfg){host.innerHTML='<div class="panel empty-state">Módulo não configurado.</div>';return}
   const rows=await query(cfg.table);
+  const relatedTables = {
+   trips:['drivers'],
+   fuelings:['drivers','trips'],
+   trip_expenses:['drivers','trips'],
+   driver_advances:['drivers'],
+   advance_settlements:['drivers','trips','driver_advances'],
+   maintenance_records:['trucks','trailers'],
+   trip_reviews:['trips'],
+   document_files:['drivers','trips']
+  };
+  await Promise.all((relatedTables[current]||[]).map(table=>cache[table]?Promise.resolve(cache[table]):query(table)));
   await renderTable(host,cfg,rows);
  }catch(e){host.innerHTML=`<div class="panel empty-state"><b>Não foi possível carregar os dados</b><p>${esc(e.message||e)}</p><small>Verifique sua conexão e as permissões de acesso.</small></div>`}
 }
@@ -181,10 +192,13 @@ async function financeDashboard(host){
 }
 function statusName(s){return ({rascunho:'Rascunho',pendente:'Pendente',aprovada:'Aprovada',devolvida:'Devolvida'})[s]||s||'—'}
 function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driver?.full_name||cache.drivers?.find(x=>x.id===v)?.full_name||v?.slice(0,8)||'—';
- if(key==='trip_id')return row.trip?`${row.trip.origin_city} → ${row.trip.destination_city}`:v?.slice(0,8)||'—';
+ if(key==='trip_id'){
+  const trip=row.trip||cache.trips?.find(x=>x.id===v);
+  return trip?`${trip.origin_city} → ${trip.destination_city}`:v?.slice(0,8)||'—';
+ }
  if(key==='truck_id')return row.truck?.plate||cache.trucks?.find(x=>x.id===v)?.plate||'—';
  if(key==='trailer_id')return row.trailer?.plate||cache.trailers?.find(x=>x.id===v)?.plate||'—';
- if(key==='advance_id')return row.advance?.reference_code||v?.slice(0,8)||'—';
+ if(key==='advance_id')return row.advance?.reference_code||cache.driver_advances?.find(x=>x.id===v)?.reference_code||v?.slice(0,8)||'—';
  if(key==='active'||key==='full_tank'||key==='arla_32_enabled')return v?'Sim':'Não';
  if(key.endsWith('_at')||key.endsWith('_date'))return date(v);
  if(key==='status'||key==='previous_status'||key==='new_status')return statusName(v);
