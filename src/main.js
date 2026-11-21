@@ -1,10 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
+const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
-const supabaseConfigured = Boolean(supabaseUrl && supabaseKey && !supabaseUrl.includes('SEU-PROJETO') && !supabaseKey.includes('SUA_CHAVE'));
-const supabase = supabaseConfigured ? createClient(supabaseUrl, supabaseKey) : null;
+
+function isPublicSupabaseKey(key) {
+ if (key.startsWith('sb_publishable_')) return true;
+ const parts = key.split('.');
+ if (parts.length !== 3) return false;
+ try {
+  const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+  return JSON.parse(atob(padded)).role === 'anon';
+ } catch {
+  return false;
+ }
+}
+
+let supabase = null;
+let supabaseConfigMessage = '';
+try {
+ if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('SEU-PROJETO') || supabaseKey.includes('SUA_CHAVE')) {
+  throw new Error('Configure a URL e a chave pública do Supabase nas variáveis do ambiente.');
+ }
+ const parsedUrl = new URL(supabaseUrl);
+ if (parsedUrl.protocol !== 'https:' || parsedUrl.origin !== SUPABASE_PROJECT_ORIGIN) {
+  throw new Error('A URL configurada não corresponde ao projeto Supabase do ROTA EXPRESS.');
+ }
+ if (!isPublicSupabaseKey(supabaseKey)) {
+  throw new Error('A chave não foi reconhecida como publishable ou anon. Chaves secretas não são aceitas no navegador.');
+ }
+ supabase = createClient(parsedUrl.origin, supabaseKey);
+} catch (error) {
+ supabaseConfigMessage = error.message || 'Não foi possível validar a configuração do Supabase.';
+}
+const supabaseConfigured = Boolean(supabase);
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -64,7 +95,7 @@ let session=null, profile=null, current='dashboard', cache={}, modalOpen=false;
 const app=$('#app');
 function toast(msg,type='ok'){let el=$('#toast');if(!el){el=document.createElement('div');el.id='toast';document.body.append(el)}el.className=`toast ${type}`;el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3600)}
 function showSetup(){
- app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>O aplicativo precisa das duas variáveis públicas do Supabase para habilitar o acesso.</p></section><section class="login-panel"><div class="login-card"><span class="eyebrow gold">CONFIGURAÇÃO NECESSÁRIA</span><h2>Conecte o projeto Supabase</h2><p class="muted">Configure estas variáveis no ambiente de execução (ou nas variáveis de ambiente da Vercel):</p><p><b>VITE_SUPABASE_URL</b><br><code>https://vbxkuntxukparvemwuqp.supabase.co</code></p><p><b>VITE_SUPABASE_PUBLISHABLE_KEY</b><br><code>Chave sb_publishable_… do projeto</code></p><p class="notice">Use somente a chave publishable ou anon. Nunca use service_role ou uma chave secreta no navegador.</p><p class="small-note">Depois de salvar as variáveis, gere uma nova execução/build da aplicação.</p></div></section></div>`;
+ app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>O aplicativo precisa das duas variáveis públicas do Supabase para habilitar o acesso.</p></section><section class="login-panel"><div class="login-card"><span class="eyebrow gold">CONFIGURAÇÃO NECESSÁRIA</span><h2>Conecte o projeto Supabase</h2><p class="muted">Configure estas variáveis no ambiente de execução (ou nas variáveis de ambiente da Vercel):</p><p><b>VITE_SUPABASE_URL</b><br><code>https://vbxkuntxukparvemwuqp.supabase.co</code></p><p><b>VITE_SUPABASE_PUBLISHABLE_KEY</b><br><code>Chave sb_publishable_… do projeto</code></p><p class="notice">${esc(supabaseConfigMessage || 'Use somente a chave publishable ou anon. Nunca use service_role ou uma chave secreta no navegador.')}</p><p class="small-note">Depois de salvar as variáveis, gere uma nova execução/build da aplicação.</p></div></section></div>`;
 }
 function showLogin(message=''){
  app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required value="flavimcacoal70@gmail.com" placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
