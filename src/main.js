@@ -1,7 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
-const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+
+function isPublicSupabaseKey(key) {
+ if (key.startsWith('sb_publishable_')) return true;
+ const parts = key.split('.');
+ if (parts.length !== 3) return false;
+ try {
+  const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+  return JSON.parse(atob(padded)).role === 'anon';
+ } catch {
+  return false;
+ }
+}
+
+let supabase = null;
+let supabaseConfigMessage = '';
+try {
+ if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('SEU-PROJETO') || supabaseKey.includes('SUA_CHAVE')) {
+  throw new Error('Configure a URL e a chave pública do Supabase nas variáveis do ambiente.');
+ }
+ const parsedUrl = new URL(supabaseUrl);
+ if (parsedUrl.protocol !== 'https:' || parsedUrl.origin !== SUPABASE_PROJECT_ORIGIN) {
+  throw new Error('A URL configurada não corresponde ao projeto Supabase do ROTA EXPRESS.');
+ }
+ if (!isPublicSupabaseKey(supabaseKey)) {
+  throw new Error('A chave não foi reconhecida como publishable ou anon. Chaves secretas não são aceitas no navegador.');
+ }
+ supabase = createClient(parsedUrl.origin, supabaseKey);
+} catch (error) {
+ supabaseConfigMessage = error.message || 'Não foi possível validar a configuração do Supabase.';
+}
+const supabaseConfigured = Boolean(supabase);
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -9,12 +43,12 @@ const money = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currenc
 const date = v => v ? new Date(`${String(v).slice(0,10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 const today = () => new Date().toISOString().slice(0,10);
 const labels = {
- dashboard:'Visão geral', trips:'Viagens', drivers:'Motoristas', trucks:'Caminhões', trailers:'Carretas',
+ dashboard:'Visão geral', finance:'Financeiro', trips:'Viagens', drivers:'Motoristas', trucks:'Caminhões', trailers:'Carretas',
  fuelings:'Abastecimentos', trip_expenses:'Despesas', driver_advances:'Adiantamentos',
  advance_settlements:'Acertos', maintenance_records:'Manutenção', trip_reviews:'Histórico de aprovações',
  document_files:'Documentos'
 };
-const icons = {dashboard:'⌂',trips:'⇄',drivers:'♙',trucks:'▣',trailers:'▤',fuelings:'◉',trip_expenses:'＄',driver_advances:'＋',advance_settlements:'✓',maintenance_records:'⚙',trip_reviews:'◷',document_files:'▧'};
+const icons = {dashboard:'⌂',finance:'R$',trips:'⇄',drivers:'♙',trucks:'▣',trailers:'▤',fuelings:'◉',trip_expenses:'＄',driver_advances:'＋',advance_settlements:'✓',maintenance_records:'⚙',trip_reviews:'◷',document_files:'▧'};
 const configs = {
  drivers:{title:'Motoristas',table:'drivers',fields:[
   ['full_name','Nome completo','text',true],['cpf','CPF','text'],['phone','Telefone','tel'],['email','E-mail','email'],
@@ -29,7 +63,7 @@ const configs = {
  trips:{title:'Viagens',table:'trips',fields:[
   ['driver_id','Motorista','select',true,'drivers'],['origin_city','Cidade de origem','text',true],['origin_state','UF origem','text',true],
   ['destination_city','Cidade destino','text',true],['destination_state','UF destino','text',true],['trip_date','Data da viagem','date',true],
-  ['freight_gross','Frete bruto (R$)','number',true,'0'],['distance_km','Distância (km)','number'],['truck_id','Caminhão','select',true,'trucks'],['trailer_id','Carreta','select',false,'trailers'],['toll_mode','Pedágio','select',false,'toll'],
+  ['freight_gross','Frete bruto (R$)','number',true,'0'],['distance_km','Distância (km)','number'],['truck_id','Caminhão','select',true,'trucks'],['trailer_id','Carreta','select',false,'trailers'],['toll_mode','Pedágio','select',true,'toll'],
   ['toll_amount','Valor pedágio (R$)','number'],['notes','Observações','textarea']
  ],cols:['trip_date','driver_id','origin_city','destination_city','freight_gross','status']},
  fuelings:{title:'Abastecimentos',table:'fuelings',fields:[
@@ -60,8 +94,11 @@ const configs = {
 let session=null, profile=null, current='dashboard', cache={}, modalOpen=false;
 const app=$('#app');
 function toast(msg,type='ok'){let el=$('#toast');if(!el){el=document.createElement('div');el.id='toast';document.body.append(el)}el.className=`toast ${type}`;el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3600)}
+function showSetup(){
+ app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>O aplicativo precisa das duas variáveis públicas do Supabase para habilitar o acesso.</p></section><section class="login-panel"><div class="login-card"><span class="eyebrow gold">CONFIGURAÇÃO NECESSÁRIA</span><h2>Conecte o projeto Supabase</h2><p class="muted">Configure estas variáveis no ambiente de execução (ou nas variáveis de ambiente da Vercel):</p><p><b>VITE_SUPABASE_URL</b><br><code>https://vbxkuntxukparvemwuqp.supabase.co</code></p><p><b>VITE_SUPABASE_PUBLISHABLE_KEY</b><br><code>Chave sb_publishable_… do projeto</code></p><p class="notice">${esc(supabaseConfigMessage || 'Use somente a chave publishable ou anon. Nunca use service_role ou uma chave secreta no navegador.')}</p><p class="small-note">Depois de salvar as variáveis, gere uma nova execução/build da aplicação.</p></div></section></div>`;
+}
 function showLogin(message=''){
- app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
+ app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required value="flavimcacoal70@gmail.com" placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
  $('#login').addEventListener('submit',login);
  $('#forgot').addEventListener('click',forgotPassword);
 }
@@ -81,7 +118,7 @@ async function boot(){
  profile=p;renderShell();await loadPage();
 }
 function renderShell(){
- const nav=Object.entries(labels).map(([key,name])=>`<button class="nav-item ${current===key?'active':''}" data-page="${key}"><span class="nav-icon">${icons[key]||'·'}</span>${name}</button>`).join('');
+ const nav=Object.entries(labels).filter(([key])=>key!=='dashboard').map(([key,name])=>`<button class="nav-item ${current===key?'active':''}" data-page="${key}"><span class="nav-icon">${icons[key]||'·'}</span>${name}</button>`).join('');
  app.innerHTML=`<div class="app-shell"><aside class="sidebar" id="sidebar"><div class="side-brand"><div class="brand-mark small">RE</div><div><b>ROTA <span>EXPRESS</span></b><small>GESTÃO DE TRANSPORTE</small></div></div><div class="side-label">MENU PRINCIPAL</div><nav>${`<button class="nav-item ${current==='dashboard'?'active':''}" data-page="dashboard"><span class="nav-icon">⌂</span>Visão geral</button>`}${nav}</nav><div class="side-bottom"><div class="connection"><i></i>Banco de dados conectado</div><div class="user-mini"><div class="avatar">${esc((profile.full_name||'G').slice(0,1).toUpperCase())}</div><div><b>${esc(profile.full_name)}</b><small>Gestor</small></div></div><button class="logout" id="logout">↪ Sair da conta</button></div></aside><main class="main-area"><header class="topbar"><button class="menu-toggle" id="menu">☰</button><div><div class="eyebrow gold">ROTA EXPRESS</div><div class="top-title">${labels[current]||'Visão geral'}</div></div><div class="top-right"><span class="role-pill">GESTOR</span><span class="today">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</span></div></header><section class="content" id="content"><div class="loading">Carregando dados…</div></section></main></div><div id="modal-root"></div>`;
  $$('[data-page]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
  $('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();session=null;profile=null;showLogin()});
@@ -92,8 +129,20 @@ async function query(table,select='*'){const {data,error}=await supabase.from(ta
 async function loadPage(){
  const host=$('#content');host.innerHTML='<div class="loading">Consultando o banco de dados…</div>';
  try{if(current==='dashboard'){await dashboard(host);return}
+  if(current==='finance'){await financeDashboard(host);return}
   const cfg=configs[current];if(!cfg){host.innerHTML='<div class="panel empty-state">Módulo não configurado.</div>';return}
   const rows=await query(cfg.table);
+  const relatedTables = {
+   trips:['drivers'],
+   fuelings:['drivers','trips'],
+   trip_expenses:['drivers','trips'],
+   driver_advances:['drivers'],
+   advance_settlements:['drivers','trips','driver_advances'],
+   maintenance_records:['trucks','trailers'],
+   trip_reviews:['trips'],
+   document_files:['drivers','trips']
+  };
+  await Promise.all((relatedTables[current]||[]).map(table=>cache[table]?Promise.resolve(cache[table]):query(table)));
   await renderTable(host,cfg,rows);
  }catch(e){host.innerHTML=`<div class="panel empty-state"><b>Não foi possível carregar os dados</b><p>${esc(e.message||e)}</p><small>Verifique sua conexão e as permissões de acesso.</small></div>`}
 }
@@ -103,16 +152,53 @@ async function dashboard(host){
  const counts={};results.forEach((r,i)=>{if(r.error)throw r.error;counts[names[i]]=r.count||0});
  const {data:pending,error}=await supabase.from('trips').select('id,origin_city,origin_state,destination_city,destination_state,trip_date,freight_gross,status').eq('status','pendente').order('submitted_at',{ascending:false}).limit(6);if(error)throw error;
  const {data:recent}=await supabase.from('trips').select('id,origin_city,destination_city,trip_date,freight_gross,status').order('created_at',{ascending:false}).limit(5);
- host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">RESUMO OPERACIONAL</span><h1>Bom dia, ${esc((profile.full_name||'Gestor').split(' ')[0])}</h1><p class="muted">Acompanhe os principais indicadores da operação.</p></div><button class="primary" id="new-trip">＋ Nova viagem</button></div><div class="stats-grid">${[['Motoristas',counts.drivers,'Cadastros'],['Caminhões',counts.trucks,'Veículos'],['Carretas',counts.trailers,'Implementos'],['Viagens',counts.trips,'Registros'],['Abastecimentos',counts.fuelings,'Lançamentos'],['Despesas',counts.trip_expenses,'Lançamentos'],['Adiantamentos',counts.driver_advances,'Registros'],['Manutenções',counts.maintenance_records,'Registros']].map((x,i)=>`<article class="stat-card ${i===3?'accent':''}"><span>${x[0]}</span><strong>${x[1]}</strong><small>${x[2]} no banco de dados</small></article>`).join('')}</div><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><b>Viagens aguardando aprovação</b><small>${pending.length} pendente(s)</small></div><button class="link-button" data-page="trips">Ver viagens →</button></div>${pending.length?pending.map(t=>`<div class="recent-row"><div><b>${esc(t.origin_city)} → ${esc(t.destination_city)}</b><small>${date(t.trip_date)} · ${esc(t.origin_state)} / ${esc(t.destination_state)}</small></div><div class="recent-value">${money(t.freight_gross)}<br><span class="status warning">Pendente</span></div></div>`).join(''):'<div class="empty-state compact">Nenhuma viagem aguardando aprovação.</div>'}</section><section class="panel"><div class="panel-head"><div><b>Acesso rápido</b><small>Atalhos operacionais</small></div></div><div class="quick-links">${[['drivers','♙','Cadastrar motorista'],['trucks','▣','Cadastrar caminhão'],['trailers','▤','Cadastrar carreta'],['trips','⇄','Consultar viagens'],['driver_advances','＋','Lançar adiantamento']].map(x=>`<button data-page="${x[0]}"><span>${x[1]}</span>${x[2]}<i>›</i></button>`).join('')}</div></section></div><section class="panel recent-panel"><div class="panel-head"><div><b>Viagens recentes</b><small>Últimos registros</small></div></div>${recent?.length?recent.map(t=>`<div class="recent-row"><div><b>${esc(t.origin_city)} → ${esc(t.destination_city)}</b><small>${date(t.trip_date)}</small></div><div class="recent-value">${money(t.freight_gross)}<br><span class="status">${statusName(t.status)}</span></div></div>`).join(''):'<div class="empty-state compact">Nenhuma viagem cadastrada.</div>'}</section>`;
+ host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">RESUMO OPERACIONAL</span><h1>Bom dia, ${esc((profile.full_name||'Gestor').split(' ')[0])}</h1><p class="muted">Acompanhe os principais indicadores da operação.</p></div><button class="primary" id="new-trip">＋ Nova viagem</button></div><div class="stats-grid">${[['Motoristas',counts.drivers,'Cadastros'],['Caminhões',counts.trucks,'Veículos'],['Carretas',counts.trailers,'Implementos'],['Viagens',counts.trips,'Registros'],['Abastecimentos',counts.fuelings,'Lançamentos'],['Despesas',counts.trip_expenses,'Lançamentos'],['Adiantamentos',counts.driver_advances,'Registros'],['Manutenções',counts.maintenance_records,'Registros']].map((x,i)=>`<article class="stat-card ${i===3?'accent':''}"><span>${x[0]}</span><strong>${x[1]}</strong><small>${x[2]} no banco de dados</small></article>`).join('')}</div><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><b>Viagens aguardando aprovação</b><small>${pending.length} pendente(s)</small></div><button class="link-button" data-page="trips">Ver viagens →</button></div>${pending.length?pending.map(t=>`<div class="recent-row"><div><b>${esc(t.origin_city)} → ${esc(t.destination_city)}</b><small>${date(t.trip_date)} · ${esc(t.origin_state)} / ${esc(t.destination_state)}</small></div><div class="recent-value">${money(t.freight_gross)}<br><span class="status warning">Pendente</span></div></div>`).join(''):'<div class="empty-state compact">Nenhuma viagem aguardando aprovação.</div>'}</section><section class="panel"><div class="panel-head"><div><b>Acesso rápido</b><small>Atalhos operacionais</small></div></div><div class="quick-links">${[['drivers','♙','Cadastrar motorista'],['trucks','▣','Cadastrar caminhão'],['trailers','▤','Cadastrar carreta'],['trips','⇄','Consultar viagens'],['finance','R$','Resumo financeiro'],['driver_advances','＋','Lançar adiantamento']].map(x=>`<button data-page="${x[0]}"><span>${x[1]}</span>${x[2]}<i>›</i></button>`).join('')}</div></section></div><section class="panel recent-panel"><div class="panel-head"><div><b>Viagens recentes</b><small>Últimos registros</small></div></div>${recent?.length?recent.map(t=>`<div class="recent-row"><div><b>${esc(t.origin_city)} → ${esc(t.destination_city)}</b><small>${date(t.trip_date)}</small></div><div class="recent-value">${money(t.freight_gross)}<br><span class="status">${statusName(t.status)}</span></div></div>`).join(''):'<div class="empty-state compact">Nenhuma viagem cadastrada.</div>'}</section>`;
  $('#new-trip').onclick=()=>openForm('trips');
  $$('[data-page]',host).forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 }
+async function financeDashboard(host){
+ const [tripsR,fuelingsR,expensesR,maintenanceR,advancesR,settlementsR]=await Promise.all([
+  supabase.from('trips').select('freight_gross,status,commission_percent_snapshot,toll_mode,toll_amount'),
+  supabase.from('fuelings').select('total_amount'),
+  supabase.from('trip_expenses').select('amount'),
+  supabase.from('maintenance_records').select('amount'),
+  supabase.from('driver_advances').select('amount'),
+  supabase.from('advance_settlements').select('amount_applied')
+ ]);
+ for(const r of [tripsR,fuelingsR,expensesR,maintenanceR,advancesR,settlementsR])if(r.error)throw r.error;
+ const trips=tripsR.data||[], approved=trips.filter(t=>t.status==='aprovada');
+ const sum=(rows,key)=>rows.reduce((total,row)=>total+Number(row[key]||0),0);
+ const freight=sum(approved,'freight_gross');
+ const fuel=sum(fuelingsR.data||[],'total_amount');
+ const expenses=sum(expensesR.data||[],'amount');
+ const maintenance=sum(maintenanceR.data||[],'amount');
+ const advances=sum(advancesR.data||[],'amount');
+ const settled=sum(settlementsR.data||[],'amount_applied');
+ const tolls=sum(approved.filter(t=>t.toll_mode==='por_conta_da_empresa'),'toll_amount');
+ const commissionTrips=approved.filter(t=>t.commission_percent_snapshot!==null&&t.commission_percent_snapshot!==undefined);
+ const commission=commissionTrips.reduce((total,t)=>total+Number(t.freight_gross||0)*Number(t.commission_percent_snapshot||0)/100,0);
+ const metrics=[
+  ['Frete aprovado',money(freight),'Somente viagens aprovadas',true],
+  ['Comissão estimada',commissionTrips.length?money(commission):'—',commissionTrips.length+' viagem(ns) com percentual salvo'],
+  ['Abastecimentos',money(fuel),'Total lançado'],
+  ['Despesas de viagem',money(expenses),'Total lançado'],
+  ['Manutenção',money(maintenance),'Total lançado'],
+  ['Pedágio da empresa',money(tolls),'Viagens aprovadas com pedágio por conta da empresa'],
+  ['Adiantamentos emitidos',money(advances),'Total liberado aos motoristas'],
+  ['Acertos registrados',money(settled),'Valores aplicados aos adiantamentos'],
+  ['Saldo de adiantamentos',money(advances-settled),'Emitidos menos valores aplicados',true]
+ ];
+ host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CONTROLE GERENCIAL</span><h1>Financeiro</h1><p class="muted">Resumo acumulado dos lançamentos disponíveis no banco de dados.</p></div></div><div class="finance-grid">${metrics.map(([label,value,note,emphasis])=>`<article class="finance-card ${emphasis?'emphasis':''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('')}</div><section class="panel finance-note"><b>Como interpretar este resumo</b><p class="muted">O frete considera apenas viagens aprovadas. A comissão é estimada somente quando existe percentual gravado na viagem. Abastecimentos, despesas, manutenção, pedágios e adiantamentos são apresentados separadamente; este painel ainda não substitui conciliação, fechamento ou demonstrativo contábil.</p><p class="muted">Viagens aguardando aprovação: <b>${trips.filter(t=>t.status==='pendente').length}</b> · Viagens aprovadas: <b>${approved.length}</b></p></section>`;
+}
 function statusName(s){return ({rascunho:'Rascunho',pendente:'Pendente',aprovada:'Aprovada',devolvida:'Devolvida'})[s]||s||'—'}
 function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driver?.full_name||cache.drivers?.find(x=>x.id===v)?.full_name||v?.slice(0,8)||'—';
- if(key==='trip_id')return row.trip?`${row.trip.origin_city} → ${row.trip.destination_city}`:v?.slice(0,8)||'—';
+ if(key==='trip_id'){
+  const trip=row.trip||cache.trips?.find(x=>x.id===v);
+  return trip?`${trip.origin_city} → ${trip.destination_city}`:v?.slice(0,8)||'—';
+ }
  if(key==='truck_id')return row.truck?.plate||cache.trucks?.find(x=>x.id===v)?.plate||'—';
  if(key==='trailer_id')return row.trailer?.plate||cache.trailers?.find(x=>x.id===v)?.plate||'—';
- if(key==='advance_id')return row.advance?.reference_code||v?.slice(0,8)||'—';
+ if(key==='advance_id')return row.advance?.reference_code||cache.driver_advances?.find(x=>x.id===v)?.reference_code||v?.slice(0,8)||'—';
  if(key==='active'||key==='full_tank'||key==='arla_32_enabled')return v?'Sim':'Não';
  if(key.endsWith('_at')||key.endsWith('_date'))return date(v);
  if(key==='status'||key==='previous_status'||key==='new_status')return statusName(v);
@@ -165,7 +251,13 @@ async function saveForm(e,key){
  e.preventDefault();const form=e.currentTarget;const cfg=configs[key];const data={};
  for(const f of cfg.fields){const [name,,type]=f;const el=form.elements[name];if(!el)continue;let v=type==='checkbox'?el.checked:el.value;if(type==='number')v=v===''?null:Number(v);else if(v==='')v=null;data[name]=v}
  if(key==='drivers')data.commission_percent??=15;
- if(key==='trips'){data.created_by=session.user.id;data.status='rascunho';data.origin_state=data.origin_state?.toUpperCase();data.destination_state=data.destination_state?.toUpperCase()}
+ if(key==='trips'){
+  data.created_by=session.user.id;data.status='rascunho';data.origin_state=data.origin_state?.toUpperCase();data.destination_state=data.destination_state?.toUpperCase();
+  const driver=cache.drivers?.find(x=>x.id===data.driver_id);
+  data.commission_percent_snapshot=driver?.commission_percent??null;
+  if(data.toll_mode==='a_parte')data.toll_amount=null;
+  if(data.toll_mode==='por_conta_da_empresa'&&data.toll_amount===null){$('#form-error').textContent='Informe o valor do pedágio pago pela empresa.';return}
+ }
  if(key==='fuelings')data.total_amount=Number(data.liters||0)*Number(data.unit_price||0);
  if(['driver_advances','maintenance_records'].includes(key))data.created_by=session.user.id;
  if(key==='advance_settlements')data.created_by=session.user.id;
@@ -185,6 +277,8 @@ async function saveForm(e,key){
  if(error){$('#form-error').textContent=error.message||String(error);b.disabled=false;b.textContent='Salvar registro';return}
  $('#modal-root').innerHTML='';toast('Registro salvo com sucesso.');await loadPage();
 }
-supabase.auth.onAuthStateChange((_event,s)=>{if(!s){session=null;profile=null;showLogin()}});
-showLogin();
-boot();
+if(!supabase){showSetup()}else{
+ supabase.auth.onAuthStateChange((_event,s)=>{if(!s){session=null;profile=null;showLogin()}});
+ showLogin();
+ boot();
+}
