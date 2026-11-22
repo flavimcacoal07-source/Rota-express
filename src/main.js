@@ -67,12 +67,12 @@ const configs = {
   ['toll_amount','Valor pedágio (R$)','number'],['notes','Observações','textarea']
  ],cols:['trip_date','driver_id','origin_city','destination_city','freight_gross','status']},
  fuelings:{title:'Abastecimentos',table:'fuelings',fields:[
-  ['trip_id','Viagem','select',true,'trips'],['driver_id','Motorista','select',true,'drivers'],['fuel_type','Combustível','select',true,'fuel'],
+  ['trip_id','Viagem','select',true,'trips'],['driver_id','Motorista (vinculado à viagem)','select',true,'drivers'],['fuel_type','Combustível','select',true,'fuel'],
   ['fueling_at','Data e hora','datetime-local',true],['liters','Litros','number',true],['unit_price','Preço por litro (R$)','number',true],
   ['full_tank','Tanque cheio','checkbox',false,false],['odometer_km','Odômetro (km)','number'],['station_name','Posto','text'],['notes','Observações','textarea']
  ],cols:['fueling_at','driver_id','fuel_type','liters','unit_price','total_amount','full_tank']},
  trip_expenses:{title:'Despesas de viagem',table:'trip_expenses',fields:[
-  ['trip_id','Viagem','select',true,'trips'],['driver_id','Motorista','select',true,'drivers'],['category','Categoria','select',true,'expense'],
+  ['trip_id','Viagem','select',true,'trips'],['driver_id','Motorista (vinculado à viagem)','select',true,'drivers'],['category','Categoria','select',true,'expense'],
   ['description','Descrição','text',true],['amount','Valor (R$)','number',true],['expense_at','Data e hora','datetime-local',true]
  ],cols:['expense_at','trip_id','driver_id','category','description','amount']},
  driver_advances:{title:'Adiantamentos',table:'driver_advances',fields:[
@@ -81,7 +81,7 @@ const configs = {
  ],cols:['reference_code','driver_id','advance_date','description','amount']},
  advance_settlements:{title:'Acertos de adiantamentos',table:'advance_settlements',fields:[
   ['advance_id','Adiantamento','select',true,'advances'],['trip_id','Viagem relacionada','select',false,'trips'],
-  ['driver_id','Motorista','select',true,'drivers'],['amount_applied','Valor aplicado (R$)','number',true],['settled_at','Data do acerto','date',true]
+  ['driver_id','Motorista (vinculado ao adiantamento)','select',true,'drivers'],['amount_applied','Valor aplicado (R$)','number',true],['settled_at','Data do acerto','date',true]
  ],cols:['settled_at','advance_id','trip_id','driver_id','amount_applied']},
  maintenance_records:{title:'Manutenção',table:'maintenance_records',fields:[
   ['truck_id','Caminhão','select',false,'trucks'],['trailer_id','Carreta','select',false,'trailers'],
@@ -216,9 +216,11 @@ async function renderTable(host,cfg,rows){
 function columnLabel(c){return ({full_name:'Nome',cpf:'CPF',phone:'Telefone',commission_percent:'Comissão',active:'Ativo',plate:'Placa',description:'Descrição',arla_32_enabled:'ARLA 32',trip_date:'Data',driver_id:'Motorista',origin_city:'Origem',destination_city:'Destino',freight_gross:'Frete bruto',status:'Situação',fueling_at:'Data',fuel_type:'Tipo',liters:'Litros',unit_price:'Preço/L',total_amount:'Total',full_tank:'Tanque cheio',category:'Categoria',amount:'Valor',expense_at:'Data',reference_code:'Referência',advance_date:'Data',settled_at:'Data acerto',advance_id:'Adiantamento',amount_applied:'Valor aplicado',maintenance_date:'Data',truck_id:'Caminhão',trailer_id:'Carreta',next_due_date:'Próxima revisão',created_at:'Data',trip_id:'Viagem',previous_status:'Situação anterior',new_status:'Nova situação',original_name:'Arquivo',content_type:'Tipo arquivo',reason:'Motivo'})[c]||c}
 function tripActions(r){if(r.status==='rascunho')return `<button class="mini-action approve" data-action="pendente" data-id="${r.id}">Enviar</button>`;if(r.status==='pendente')return `<button class="mini-action approve" data-action="aprovada" data-id="${r.id}">Aprovar</button><button class="mini-action return" data-action="devolvida" data-id="${r.id}">Devolver</button>`;return `<span class="status">${statusName(r.status)}</span>`}
 async function updateTrip(id,status){let reason=null;if(status==='devolvida'){reason=prompt('Informe o motivo da devolução:');if(!reason?.trim())return}
+ const {data:currentTrip,error:readError}=await supabase.from('trips').select('status').eq('id',id).single();
+ if(readError){toast(readError.message,'error');return}
  const update={status,updated_at:new Date().toISOString()};if(status==='pendente')update.submitted_at=new Date().toISOString();if(status==='aprovada'){update.approved_at=new Date().toISOString();update.approved_by=session.user.id}else if(status==='devolvida')update.returned_reason=reason;
  const {error}=await supabase.from('trips').update(update).eq('id',id);if(error){toast(error.message,'error');return}
- const {error:logError}=await supabase.from('trip_reviews').insert({trip_id:id,reviewer_id:session.user.id,new_status:status,reason});
+ const {error:logError}=await supabase.from('trip_reviews').insert({trip_id:id,reviewer_id:session.user.id,previous_status:currentTrip.status,new_status:status,reason});
  if(logError){toast('Viagem atualizada, mas o histórico não foi gravado: '+logError.message,'error')}else toast('Situação da viagem atualizada.');
  await loadPage();
 }
@@ -239,7 +241,26 @@ async function openForm(key){
  const modal=$('#modal-root');
  modal.innerHTML=`<div class="modal-backdrop"><form class="modal" id="record-form"><div class="modal-head"><div><span class="eyebrow gold">NOVO CADASTRO</span><h2>${cfg.title}</h2><p class="muted">Preencha os campos para salvar no banco de dados.</p></div><button class="close-modal" type="button" id="close-modal">×</button></div><div class="form-grid">${fields.map(({f,opts})=>renderField(f,opts)).join('')}</div><div class="modal-actions"><button class="outline" type="button" id="cancel-modal">Cancelar</button><button class="primary" type="submit">Salvar registro</button></div><p class="notice" id="form-error"></p></form></div>`;
  $('#close-modal').onclick=$('#cancel-modal').onclick=()=>modal.innerHTML='';
- $('#record-form').addEventListener('submit',e=>saveForm(e,key));
+ const form=$('#record-form');
+ if(key==='fuelings'||key==='trip_expenses')bindDriverToSource(form,'trip_id','trips');
+ if(key==='advance_settlements')bindDriverToSource(form,'advance_id','driver_advances');
+ form.addEventListener('submit',e=>saveForm(e,key));
+}
+function bindDriverToSource(form,sourceField,sourceTable){
+ const source=form.elements[sourceField],driver=form.elements.driver_id;
+ if(!source||!driver)return;
+ const sync=()=>{
+  const linked=cache[sourceTable]?.find(row=>row.id===source.value);
+  const driverId=linked?.driver_id||'';
+  if(driverId&&!Array.from(driver.options).some(option=>option.value===driverId)){
+   const record=cache.drivers?.find(row=>row.id===driverId);
+   driver.add(new Option(record?.full_name||'Motorista vinculado',driverId));
+  }
+  driver.value=driverId;
+  driver.disabled=Boolean(driverId);
+ };
+ source.addEventListener('change',sync);
+ sync();
 }
 function renderField(f,opts){const [name,label,type,required=false,defaultValue]=f;const req=required?'required':'';
  if(type==='checkbox')return `<label class="check-field"><input type="checkbox" name="${name}" ${defaultValue?'checked':''}> ${label}</label>`;
@@ -258,9 +279,19 @@ async function saveForm(e,key){
   if(data.toll_mode==='a_parte')data.toll_amount=null;
   if(data.toll_mode==='por_conta_da_empresa'&&data.toll_amount===null){$('#form-error').textContent='Informe o valor do pedágio pago pela empresa.';return}
  }
- if(key==='fuelings')data.total_amount=Number(data.liters||0)*Number(data.unit_price||0);
- if(['driver_advances','maintenance_records'].includes(key))data.created_by=session.user.id;
- if(key==='advance_settlements')data.created_by=session.user.id;
+ if(key==='fuelings'||key==='trip_expenses'){
+  const linkedTrip=cache.trips?.find(row=>row.id===data.trip_id);
+  if(!linkedTrip){$('#form-error').textContent='Selecione uma viagem válida.';return}
+  data.driver_id=linkedTrip.driver_id;
+ }
+ if(key==='advance_settlements'){
+  const linkedAdvance=cache.driver_advances?.find(row=>row.id===data.advance_id);
+  if(!linkedAdvance){$('#form-error').textContent='Selecione um adiantamento válido.';return}
+  data.driver_id=linkedAdvance.driver_id;
+  const linkedTrip=cache.trips?.find(row=>row.id===data.trip_id);
+  if(data.trip_id&&linkedTrip&&linkedTrip.driver_id!==linkedAdvance.driver_id){$('#form-error').textContent='A viagem e o adiantamento precisam pertencer ao mesmo motorista.';return}
+ }
+ if(['driver_advances','maintenance_records','advance_settlements'].includes(key))data.created_by=session.user.id;
  if(key==='trip_expenses'&&data.expense_at)data.expense_at=new Date(data.expense_at).toISOString();
  if(key==='fuelings'&&data.fueling_at)data.fueling_at=new Date(data.fueling_at).toISOString();
  const b=$('button[type=submit]',form);b.disabled=true;b.textContent='Salvando…';
