@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
+import { calculateFinance } from './finance.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -126,6 +127,16 @@ function renderShell(){
 }
 async function navigate(page){current=page;renderShell();await loadPage()}
 async function query(table,select='*'){const {data,error}=await supabase.from(table).select(select).order('created_at',{ascending:false}).limit(250);if(error)throw error;cache[table]=data||[];return cache[table]}
+async function fetchAllRows(table, columns, pageSize=500){
+ const rows=[];
+ for(let offset=0;;offset+=pageSize){
+  const {data,error}=await supabase.from(table).select(columns).order('id',{ascending:true}).range(offset,offset+pageSize-1);
+  if(error)throw error;
+  const page=data||[];
+  rows.push(...page);
+  if(page.length<pageSize)return rows;
+ }
+}
 async function loadPage(){
  const host=$('#content');host.innerHTML='<div class="loading">Consultando o banco de dados…</div>';
  try{if(current==='dashboard'){await dashboard(host);return}
@@ -157,38 +168,27 @@ async function dashboard(host){
  $$('[data-page]',host).forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 }
 async function financeDashboard(host){
- const [tripsR,fuelingsR,expensesR,maintenanceR,advancesR,settlementsR]=await Promise.all([
-  supabase.from('trips').select('freight_gross,status,commission_percent_snapshot,toll_mode,toll_amount'),
-  supabase.from('fuelings').select('total_amount'),
-  supabase.from('trip_expenses').select('amount'),
-  supabase.from('maintenance_records').select('amount'),
-  supabase.from('driver_advances').select('amount'),
-  supabase.from('advance_settlements').select('amount_applied')
+ const [trips,fuelings,expenses,maintenance,advances,settlements]=await Promise.all([
+  fetchAllRows('trips','freight_gross,status,commission_percent_snapshot,toll_mode,toll_amount'),
+  fetchAllRows('fuelings','total_amount'),
+  fetchAllRows('trip_expenses','amount'),
+  fetchAllRows('maintenance_records','amount'),
+  fetchAllRows('driver_advances','amount'),
+  fetchAllRows('advance_settlements','amount_applied')
  ]);
- for(const r of [tripsR,fuelingsR,expensesR,maintenanceR,advancesR,settlementsR])if(r.error)throw r.error;
- const trips=tripsR.data||[], approved=trips.filter(t=>t.status==='aprovada');
- const sum=(rows,key)=>rows.reduce((total,row)=>total+Number(row[key]||0),0);
- const freight=sum(approved,'freight_gross');
- const fuel=sum(fuelingsR.data||[],'total_amount');
- const expenses=sum(expensesR.data||[],'amount');
- const maintenance=sum(maintenanceR.data||[],'amount');
- const advances=sum(advancesR.data||[],'amount');
- const settled=sum(settlementsR.data||[],'amount_applied');
- const tolls=sum(approved.filter(t=>t.toll_mode==='por_conta_da_empresa'),'toll_amount');
- const commissionTrips=approved.filter(t=>t.commission_percent_snapshot!==null&&t.commission_percent_snapshot!==undefined);
- const commission=commissionTrips.reduce((total,t)=>total+Number(t.freight_gross||0)*Number(t.commission_percent_snapshot||0)/100,0);
+ const totals=calculateFinance({trips,fuelings,expenses,maintenance,advances,settlements});
  const metrics=[
-  ['Frete aprovado',money(freight),'Somente viagens aprovadas',true],
-  ['Comissão estimada',commissionTrips.length?money(commission):'—',commissionTrips.length+' viagem(ns) com percentual salvo'],
-  ['Abastecimentos',money(fuel),'Total lançado'],
-  ['Despesas de viagem',money(expenses),'Total lançado'],
-  ['Manutenção',money(maintenance),'Total lançado'],
-  ['Pedágio da empresa',money(tolls),'Viagens aprovadas com pedágio por conta da empresa'],
-  ['Adiantamentos emitidos',money(advances),'Total liberado aos motoristas'],
-  ['Acertos registrados',money(settled),'Valores aplicados aos adiantamentos'],
-  ['Saldo de adiantamentos',money(advances-settled),'Emitidos menos valores aplicados',true]
+  ['Frete aprovado',money(totals.freight),'Somente viagens aprovadas',true],
+  ['Comissão estimada',totals.commissionTripsCount?money(totals.commission):'—',totals.commissionTripsCount+' viagem(ns) com percentual salvo'],
+  ['Abastecimentos',money(totals.fuel),'Total lançado'],
+  ['Despesas de viagem',money(totals.expenses),'Total lançado'],
+  ['Manutenção',money(totals.maintenance),'Total lançado'],
+  ['Pedágio da empresa',money(totals.tolls),'Viagens aprovadas com pedágio por conta da empresa'],
+  ['Adiantamentos emitidos',money(totals.advances),'Total liberado aos motoristas'],
+  ['Acertos registrados',money(totals.settled),'Valores aplicados aos adiantamentos'],
+  ['Saldo de adiantamentos',money(totals.advanceBalance),'Emitidos menos valores aplicados',true]
  ];
- host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CONTROLE GERENCIAL</span><h1>Financeiro</h1><p class="muted">Resumo acumulado dos lançamentos disponíveis no banco de dados.</p></div></div><div class="finance-grid">${metrics.map(([label,value,note,emphasis])=>`<article class="finance-card ${emphasis?'emphasis':''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('')}</div><section class="panel finance-note"><b>Como interpretar este resumo</b><p class="muted">O frete considera apenas viagens aprovadas. A comissão é estimada somente quando existe percentual gravado na viagem. Abastecimentos, despesas, manutenção, pedágios e adiantamentos são apresentados separadamente; este painel ainda não substitui conciliação, fechamento ou demonstrativo contábil.</p><p class="muted">Viagens aguardando aprovação: <b>${trips.filter(t=>t.status==='pendente').length}</b> · Viagens aprovadas: <b>${approved.length}</b></p></section>`;
+ host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CONTROLE GERENCIAL</span><h1>Financeiro</h1><p class="muted">Resumo acumulado dos lançamentos disponíveis no banco de dados.</p></div></div><div class="finance-grid">${metrics.map(([label,value,note,emphasis])=>`<article class="finance-card ${emphasis?'emphasis':''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('')}</div><section class="panel finance-note"><b>Como interpretar este resumo</b><p class="muted">O frete considera apenas viagens aprovadas. A comissão é estimada somente quando existe percentual gravado na viagem. Abastecimentos, despesas, manutenção, pedágios e adiantamentos são apresentados separadamente; este painel ainda não substitui conciliação, fechamento ou demonstrativo contábil.</p><p class="muted">Viagens aguardando aprovação: <b>${totals.pendingTripsCount}</b> · Viagens aprovadas: <b>${totals.approvedTripsCount}</b></p></section>`;
 }
 function statusName(s){return ({rascunho:'Rascunho',pendente:'Pendente',aprovada:'Aprovada',devolvida:'Devolvida'})[s]||s||'—'}
 function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driver?.full_name||cache.drivers?.find(x=>x.id===v)?.full_name||v?.slice(0,8)||'—';
