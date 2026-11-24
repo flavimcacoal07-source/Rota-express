@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import { calculateFinance } from './finance.js';
+import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -207,12 +208,44 @@ function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driv
  if(key==='category')return ({alimentacao:'Alimentação',hospedagem:'Hospedagem',manutencao:'Manutenção',estacionamento:'Estacionamento',documentacao:'Documentação',outros:'Outros'})[v]||v;
  return v??'—'}
 async function renderTable(host,cfg,rows){
- const title=cfg.title;let columns=cfg.cols;
- const displayRows=rows;
- host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${title}</h1><p class="muted">${rows.length} registro(s) encontrado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${current==='trips'?'<th>Ações</th>':''}</tr></thead><tbody>${displayRows.length?displayRows.map(r=>`<tr>${columns.map(c=>`<td>${esc(fieldValue(r,c))}</td>`).join('')}${current==='trips'?`<td class="actions">${tripActions(r)}</td>`:''}</tr>`).join(''):`<tr><td colspan="${columns.length+1}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>${cfg.readonly?'':'<small>Use o botão “Novo registro” para começar.</small>'}</div></td></tr>`}</tbody></table></div><div class="table-foot">Dados consultados diretamente no Supabase · Exibindo até 250 registros</div></div>`;
+ const title=cfg.title;
+ const columns=cfg.cols;
+ const hasActions=!cfg.readonly;
+ const footnote=['drivers','trucks','trailers'].includes(current)
+  ? 'Para preservar o histórico, desative cadastros já utilizados pelo campo Ativo.'
+  : 'Dados consultados diretamente no Supabase · Exibindo até 250 registros';
+ host.innerHTML=\`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>\${title}</h1><p class="muted">\${rows.length} registro(s) encontrado(s).</p></div>\${cfg.readonly?'':\`<button class="primary" id="add-record">＋ Novo registro</button>\`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>\${columns.map(c=>\`<th>\${esc(columnLabel(c))}</th>\`).join('')}\${hasActions?'<th>Ações</th>':''}</tr></thead><tbody>\${displayRowsMarkup(rows,columns,hasActions)}</tbody></table></div><div class="table-foot">\${footnote}</div></div>\`;
  if(!cfg.readonly)$('#add-record').onclick=()=>openForm(current);
- $$('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
+ $('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
+ $('[data-edit-id]').forEach(b=>b.addEventListener('click',()=>{
+  const record=rows.find(row=>row.id===b.dataset.editId);
+  if(record)openForm(current,record);
+ }));
+ $('[data-delete-id]').forEach(b=>b.addEventListener('click',()=>deleteRecord(current,b.dataset.deleteId)));
 }
+function displayRowsMarkup(rows,columns,hasActions){
+ if(!rows.length)return \`<tr><td colspan="\${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>\${hasActions?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>\`;
+ return rows.map(r=>\`<tr>\${columns.map(c=>\`<td>\${esc(fieldValue(r,c))}</td>\`).join('')}\${hasActions?\`<td class="actions">\${recordActions(r,current)}</td>\`:''}</tr>\`).join('');
+}
+function recordActions(record,key){
+ if(key==='trips'){
+  const canEdit=['rascunho','devolvida'].includes(record.status);
+  return \`\${tripActions(record)}\${canEdit?\`<button class="mini-action edit" data-edit-id="\${esc(record.id)}">Editar</button>\`:''}\`;
+ }
+ const canDelete=['fuelings','trip_expenses','driver_advances','advance_settlements','maintenance_records'].includes(key);
+ return \`<button class="mini-action edit" data-edit-id="\${esc(record.id)}">Editar</button>\${canDelete?\`<button class="mini-action delete" data-delete-id="\${esc(record.id)}">Excluir</button>\`:''}\`;
+}
+async function deleteRecord(key,id){
+ const cfg=configs[key];
+ const allowed=['fuelings','trip_expenses','driver_advances','advance_settlements','maintenance_records'];
+ if(!cfg||!allowed.includes(key))return;
+ if(!confirm('Excluir este registro? Esta ação não poderá ser desfeita.'))return;
+ const {error}=await supabase.from(cfg.table).delete().eq('id',id);
+ if(error){toast('Não foi possível excluir: '+error.message,'error');return}
+ toast('Registro excluído.');
+ await loadPage();
+}
+
 function columnLabel(c){return ({full_name:'Nome',cpf:'CPF',phone:'Telefone',commission_percent:'Comissão',active:'Ativo',plate:'Placa',description:'Descrição',arla_32_enabled:'ARLA 32',trip_date:'Data',driver_id:'Motorista',origin_city:'Origem',destination_city:'Destino',freight_gross:'Frete bruto',status:'Situação',fueling_at:'Data',fuel_type:'Tipo',liters:'Litros',unit_price:'Preço/L',total_amount:'Total',full_tank:'Tanque cheio',category:'Categoria',amount:'Valor',expense_at:'Data',reference_code:'Referência',advance_date:'Data',settled_at:'Data acerto',advance_id:'Adiantamento',amount_applied:'Valor aplicado',maintenance_date:'Data',truck_id:'Caminhão',trailer_id:'Carreta',next_due_date:'Próxima revisão',created_at:'Data',trip_id:'Viagem',previous_status:'Situação anterior',new_status:'Nova situação',original_name:'Arquivo',content_type:'Tipo arquivo',reason:'Motivo'})[c]||c}
 function tripActions(r){if(r.status==='rascunho')return `<button class="mini-action approve" data-action="pendente" data-id="${r.id}">Enviar</button>`;if(r.status==='pendente')return `<button class="mini-action approve" data-action="aprovada" data-id="${r.id}">Aprovar</button><button class="mini-action return" data-action="devolvida" data-id="${r.id}">Devolver</button>`;return `<span class="status">${statusName(r.status)}</span>`}
 async function updateTrip(id,status){let reason=null;if(status==='devolvida'){reason=prompt('Informe o motivo da devolução:');if(!reason?.trim())return}
@@ -235,17 +268,39 @@ async function optionData(source){
  if(source==='expense')return [['alimentacao','Alimentação'],['hospedagem','Hospedagem'],['manutencao','Manutenção'],['estacionamento','Estacionamento'],['documentacao','Documentação'],['outros','Outros']];
  return [];
 }
-async function openForm(key){
+async function openForm(key,record=null){
  const cfg=configs[key];if(!cfg||cfg.readonly)return;
- const fields=await Promise.all(cfg.fields.map(async f=>({f,opts:f[4]&&typeof f[4]==='string'&&!['15','0'].includes(f[4])?await optionData(f[4]):[]})));
+ const values=record?{...record}:{};
+ if(key==='trips'&&record){
+  const {data:vehicle,error}=await supabase.from('trip_vehicles').select('id,truck_id,trailer_id').eq('trip_id',record.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
+  if(error){toast('Não foi possível carregar o veículo da viagem: '+error.message,'error');return}
+  Object.assign(values,vehicle||{});
+ }
+ const fields=await Promise.all(cfg.fields.map(async f=>{
+  const opts=f[4]&&typeof f[4]==='string'&&!['15','0'].includes(f[4])?await optionData(f[4]):[];
+  return {f,opts:includeCurrentOption(f,opts,values)};
+ }));
  const modal=$('#modal-root');
- modal.innerHTML=`<div class="modal-backdrop"><form class="modal" id="record-form"><div class="modal-head"><div><span class="eyebrow gold">NOVO CADASTRO</span><h2>${cfg.title}</h2><p class="muted">Preencha os campos para salvar no banco de dados.</p></div><button class="close-modal" type="button" id="close-modal">×</button></div><div class="form-grid">${fields.map(({f,opts})=>renderField(f,opts)).join('')}</div><div class="modal-actions"><button class="outline" type="button" id="cancel-modal">Cancelar</button><button class="primary" type="submit">Salvar registro</button></div><p class="notice" id="form-error"></p></form></div>`;
+ modal.innerHTML=\`<div class="modal-backdrop"><form class="modal" id="record-form"><div class="modal-head"><div><span class="eyebrow gold">\${record?'EDITAR CADASTRO':'NOVO CADASTRO'}</span><h2>\${cfg.title}</h2><p class="muted">\${record?'Atualize os campos permitidos deste registro.':'Preencha os campos para salvar no banco de dados.'}</p></div><button class="close-modal" type="button" id="close-modal">×</button></div><div class="form-grid">\${fields.map(({f,opts})=>renderField(f,opts,values)).join('')}</div><div class="modal-actions"><button class="outline" type="button" id="cancel-modal">Cancelar</button><button class="primary" type="submit">\${record?'Salvar alterações':'Salvar registro'}</button></div><p class="notice" id="form-error"></p></form></div>\`;
  $('#close-modal').onclick=$('#cancel-modal').onclick=()=>modal.innerHTML='';
  const form=$('#record-form');
  if(key==='fuelings'||key==='trip_expenses')bindDriverToSource(form,'trip_id','trips');
  if(key==='advance_settlements')bindDriverToSource(form,'advance_id','driver_advances');
- form.addEventListener('submit',e=>saveForm(e,key));
+ if(record&&key==='trips'&&form.elements.driver_id)form.elements.driver_id.disabled=true;
+ if(record&&key==='driver_advances'&&form.elements.driver_id)form.elements.driver_id.disabled=true;
+ form.addEventListener('submit',e=>saveForm(e,key,record));
 }
+function includeCurrentOption(field,options,values){
+ const [name,,type,,source]=field;
+ const selected=values[name];
+ if(type!=='select'||!selected||options.some(([value])=>String(value)===String(selected)))return options;
+ const table={drivers:'drivers',trucks:'trucks',trailers:'trailers',trips:'trips',advances:'driver_advances'}[source];
+ const row=table?cache[table]?.find(item=>item.id===selected):null;
+ if(!row)return options;
+ const label=row.full_name||row.plate||row.reference_code||(row.origin_city?\`\${row.origin_city} → \${row.destination_city}\`:String(row.id).slice(0,8));
+ return [...options,[row.id,label]];
+}
+
 function bindDriverToSource(form,sourceField,sourceTable){
  const source=form.elements[sourceField],driver=form.elements.driver_id;
  if(!source||!driver)return;
@@ -262,23 +317,24 @@ function bindDriverToSource(form,sourceField,sourceTable){
  source.addEventListener('change',sync);
  sync();
 }
-function renderField(f,opts){const [name,label,type,required=false,defaultValue]=f;const req=required?'required':'';
- if(type==='checkbox')return `<label class="check-field"><input type="checkbox" name="${name}" ${defaultValue?'checked':''}> ${label}</label>`;
- if(type==='textarea')return `<label class="wide">${label}<textarea name="${name}" ${req}></textarea></label>`;
- if(type==='select')return `<label>${label}<select name="${name}" ${req}><option value="">Selecione</option>${opts.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></label>`;
- return `<label>${label}<input name="${name}" type="${type}" ${req} ${defaultValue!==undefined&&defaultValue!==null?`value="${esc(defaultValue)}"`:''} ${type==='number'?'step="0.01" min="0"':''}></label>`;
+function renderField(f,opts,values={}){
+ const [name,label,type,required=false,defaultValue]=f;
+ const hasValue=Object.prototype.hasOwnProperty.call(values,name)&&values[name]!==null&&values[name]!==undefined;
+ const value=hasValue?values[name]:defaultValue;
+ const req=required?'required':'';
+ if(type==='checkbox')return \`<label class="check-field"><input type="checkbox" name="\${name}" \${Boolean(value)?'checked':''}> \${label}</label>\`;
+ if(type==='textarea')return \`<label class="wide">\${label}<textarea name="\${name}" \${req}>\${esc(value??'')}</textarea></label>\`;
+ if(type==='select')return \`<label>\${label}<select name="\${name}" \${req}><option value="">Selecione</option>\${opts.map(([v,l])=>\`<option value="\${esc(v)}" \${String(v)===String(value??'')?'selected':''}>\${esc(l)}</option>\`).join('')}</select></label>\`;
+ let inputValue=value??'';
+ if(type==='datetime-local')inputValue=toDateTimeLocal(inputValue);
+ else if(type==='date'&&inputValue)inputValue=String(inputValue).slice(0,10);
+ return \`<label>\${label}<input name="\${name}" type="\${type}" \${req} \${inputValue!==''? \`value="\${esc(inputValue)}"\`:''} \${type==='number'?'step="0.01" min="0"':''}></label>\`;
 }
-async function saveForm(e,key){
+
+async function saveForm(e,key,record=null){
  e.preventDefault();const form=e.currentTarget;const cfg=configs[key];const data={};
  for(const f of cfg.fields){const [name,,type]=f;const el=form.elements[name];if(!el)continue;let v=type==='checkbox'?el.checked:el.value;if(type==='number')v=v===''?null:Number(v);else if(v==='')v=null;data[name]=v}
- if(key==='drivers')data.commission_percent??=15;
- if(key==='trips'){
-  data.created_by=session.user.id;data.status='rascunho';data.origin_state=data.origin_state?.toUpperCase();data.destination_state=data.destination_state?.toUpperCase();
-  const driver=cache.drivers?.find(x=>x.id===data.driver_id);
-  data.commission_percent_snapshot=driver?.commission_percent??null;
-  if(data.toll_mode==='a_parte')data.toll_amount=null;
-  if(data.toll_mode==='por_conta_da_empresa'&&data.toll_amount===null){$('#form-error').textContent='Informe o valor do pedágio pago pela empresa.';return}
- }
+ if(key==='trips'&&data.toll_mode==='por_conta_da_empresa'&&data.toll_amount===null){$('#form-error').textContent='Informe o valor do pedágio pago pela empresa.';return}
  if(key==='fuelings'||key==='trip_expenses'){
   const linkedTrip=cache.trips?.find(row=>row.id===data.trip_id);
   if(!linkedTrip){$('#form-error').textContent='Selecione uma viagem válida.';return}
@@ -291,23 +347,45 @@ async function saveForm(e,key){
   const linkedTrip=cache.trips?.find(row=>row.id===data.trip_id);
   if(data.trip_id&&linkedTrip&&linkedTrip.driver_id!==linkedAdvance.driver_id){$('#form-error').textContent='A viagem e o adiantamento precisam pertencer ao mesmo motorista.';return}
  }
- if(['driver_advances','maintenance_records','advance_settlements'].includes(key))data.created_by=session.user.id;
- if(key==='trip_expenses'&&data.expense_at)data.expense_at=new Date(data.expense_at).toISOString();
- if(key==='fuelings'&&data.fueling_at)data.fueling_at=new Date(data.fueling_at).toISOString();
- const b=$('button[type=submit]',form);b.disabled=true;b.textContent='Salvando…';
+ const linkedDriver=key==='trips'?cache.drivers?.find(row=>row.id===data.driver_id):null;
+ const payload=normalizeRecordValues(key,data,{isEditing:Boolean(record),userId:session.user.id,driverCommission:linkedDriver?.commission_percent});
+ if(record&&['drivers','trucks','trailers','trips'].includes(key))payload.updated_at=new Date().toISOString();
+ const b=$('button[type=submit]',form);b.disabled=true;b.textContent=record?'Salvando alterações…':'Salvando…';
  let error=null;
  if(key==='trips'){
-  const truckId=data.truck_id, trailerId=data.trailer_id;delete data.truck_id;delete data.trailer_id;
-  const {data:created,error:tripError}=await supabase.from(cfg.table).insert(data).select('id').single();error=tripError;
-  if(!error){const truck=cache.trucks?.find(x=>x.id===truckId) || (await supabase.from('trucks').select('id,plate').eq('id',truckId).single()).data;
-   const trailer=trailerId?(cache.trailers?.find(x=>x.id===trailerId)||(await supabase.from('trailers').select('id,plate').eq('id',trailerId).single()).data):null;
-   const {error:vehicleError}=await supabase.from('trip_vehicles').insert({trip_id:created.id,truck_id:truckId,trailer_id:trailerId||null,truck_plate_snapshot:truck?.plate||'—',trailer_plate_snapshot:trailer?.plate||null});
-   if(vehicleError)error=new Error('Viagem criada, mas houve falha ao vincular o veículo: '+vehicleError.message);
+  const truckId=payload.truck_id,trailerId=payload.trailer_id;delete payload.truck_id;delete payload.trailer_id;
+  if(record){
+   const {error:tripError}=await supabase.from(cfg.table).update(payload).eq('id',record.id);error=tripError;
+   if(!error){
+    const truck=cache.trucks?.find(x=>x.id===truckId);
+    const trailer=trailerId?cache.trailers?.find(x=>x.id===trailerId):null;
+    const {data:link,error:linkReadError}=await supabase.from('trip_vehicles').select('id').eq('trip_id',record.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
+    if(linkReadError)error=new Error('Viagem atualizada, mas não foi possível localizar o vínculo do veículo: '+linkReadError.message);
+    else{
+     const vehicleData={truck_id:truckId,trailer_id:trailerId||null,truck_plate_snapshot:truck?.plate||'—',trailer_plate_snapshot:trailer?.plate||null};
+     const result=link?await supabase.from('trip_vehicles').update(vehicleData).eq('id',link.id):await supabase.from('trip_vehicles').insert({trip_id:record.id,...vehicleData});
+     error=result.error;
+     if(error)error=new Error('Viagem atualizada, mas houve falha ao salvar o veículo: '+error.message);
+    }
+   }
+  }else{
+   const {data:created,error:tripError}=await supabase.from(cfg.table).insert(payload).select('id').single();error=tripError;
+   if(!error){
+    const truck=cache.trucks?.find(x=>x.id===truckId) || (await supabase.from('trucks').select('id,plate').eq('id',truckId).single()).data;
+    const trailer=trailerId?(cache.trailers?.find(x=>x.id===trailerId)||(await supabase.from('trailers').select('id,plate').eq('id',trailerId).single()).data):null;
+    const {error:vehicleError}=await supabase.from('trip_vehicles').insert({trip_id:created.id,truck_id:truckId,trailer_id:trailerId||null,truck_plate_snapshot:truck?.plate||'—',trailer_plate_snapshot:trailer?.plate||null});
+    if(vehicleError)error=new Error('Viagem criada, mas houve falha ao vincular o veículo: '+vehicleError.message);
+   }
   }
- }else {const result=await supabase.from(cfg.table).insert(data);error=result.error}
- if(error){$('#form-error').textContent=error.message||String(error);b.disabled=false;b.textContent='Salvar registro';return}
- $('#modal-root').innerHTML='';toast('Registro salvo com sucesso.');await loadPage();
+ }else if(record){
+  const result=await supabase.from(cfg.table).update(payload).eq('id',record.id);error=result.error;
+ }else{
+  const result=await supabase.from(cfg.table).insert(payload);error=result.error;
+ }
+ if(error){$('#form-error').textContent=error.message||String(error);b.disabled=false;b.textContent=record?'Salvar alterações':'Salvar registro';return}
+ $('#modal-root').innerHTML='';toast(record?'Alterações salvas com sucesso.':'Registro salvo com sucesso.');await loadPage();
 }
+
 if(!supabase){showSetup()}else{
  supabase.auth.onAuthStateChange((_event,s)=>{if(!s){session=null;profile=null;showLogin()}});
  showLogin();
