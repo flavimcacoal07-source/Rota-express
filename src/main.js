@@ -214,7 +214,7 @@ async function renderTable(host,cfg,rows){
  const footnote=['drivers','trucks','trailers'].includes(current)
   ? 'Para preservar o histórico, desative cadastros já utilizados pelo campo Ativo.'
   : 'Dados consultados diretamente no Supabase · Exibindo até 250 registros';
- host.innerHTML=\`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>\${title}</h1><p class="muted">\${rows.length} registro(s) encontrado(s).</p></div>\${cfg.readonly?'':\`<button class="primary" id="add-record">＋ Novo registro</button>\`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>\${columns.map(c=>\`<th>\${esc(columnLabel(c))}</th>\`).join('')}\${hasActions?'<th>Ações</th>':''}</tr></thead><tbody>\${displayRowsMarkup(rows,columns,hasActions)}</tbody></table></div><div class="table-foot">\${footnote}</div></div>\`;
+ host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${title}</h1><p class="muted">${rows.length} registro(s) encontrado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${hasActions?'<th>Ações</th>':''}</tr></thead><tbody>${displayRowsMarkup(rows,columns,hasActions)}</tbody></table></div><div class="table-foot">${footnote}</div></div>`;
  if(!cfg.readonly)$('#add-record').onclick=()=>openForm(current);
  $('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
  $('[data-edit-id]').forEach(b=>b.addEventListener('click',()=>{
@@ -224,16 +224,16 @@ async function renderTable(host,cfg,rows){
  $('[data-delete-id]').forEach(b=>b.addEventListener('click',()=>deleteRecord(current,b.dataset.deleteId)));
 }
 function displayRowsMarkup(rows,columns,hasActions){
- if(!rows.length)return \`<tr><td colspan="\${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>\${hasActions?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>\`;
- return rows.map(r=>\`<tr>\${columns.map(c=>\`<td>\${esc(fieldValue(r,c))}</td>\`).join('')}\${hasActions?\`<td class="actions">\${recordActions(r,current)}</td>\`:''}</tr>\`).join('');
+ if(!rows.length)return `<tr><td colspan="${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>${hasActions?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>`;
+ return rows.map(r=>`<tr>${columns.map(c=>`<td>${esc(fieldValue(r,c))}</td>`).join('')}${hasActions?`<td class="actions">${recordActions(r,current)}</td>`:''}</tr>`).join('');
 }
 function recordActions(record,key){
  if(key==='trips'){
   const canEdit=['rascunho','devolvida'].includes(record.status);
-  return \`\${tripActions(record)}\${canEdit?\`<button class="mini-action edit" data-edit-id="\${esc(record.id)}">Editar</button>\`:''}\`;
+  return `${tripActions(record)}${canEdit?`<button class="mini-action edit" data-edit-id="${esc(record.id)}">Editar</button>`:''}`;
  }
  const canDelete=['fuelings','trip_expenses','driver_advances','advance_settlements','maintenance_records'].includes(key);
- return \`<button class="mini-action edit" data-edit-id="\${esc(record.id)}">Editar</button>\${canDelete?\`<button class="mini-action delete" data-delete-id="\${esc(record.id)}">Excluir</button>\`:''}\`;
+ return `<button class="mini-action edit" data-edit-id="${esc(record.id)}">Editar</button>${canDelete?`<button class="mini-action delete" data-delete-id="${esc(record.id)}">Excluir</button>`:''}`;
 }
 async function deleteRecord(key,id){
  const cfg=configs[key];
@@ -281,7 +281,7 @@ async function openForm(key,record=null){
   return {f,opts:includeCurrentOption(f,opts,values)};
  }));
  const modal=$('#modal-root');
- modal.innerHTML=\`<div class="modal-backdrop"><form class="modal" id="record-form"><div class="modal-head"><div><span class="eyebrow gold">\${record?'EDITAR CADASTRO':'NOVO CADASTRO'}</span><h2>\${cfg.title}</h2><p class="muted">\${record?'Atualize os campos permitidos deste registro.':'Preencha os campos para salvar no banco de dados.'}</p></div><button class="close-modal" type="button" id="close-modal">×</button></div><div class="form-grid">\${fields.map(({f,opts})=>renderField(f,opts,values)).join('')}</div><div class="modal-actions"><button class="outline" type="button" id="cancel-modal">Cancelar</button><button class="primary" type="submit">\${record?'Salvar alterações':'Salvar registro'}</button></div><p class="notice" id="form-error"></p></form></div>\`;
+ modal.innerHTML=`<div class="modal-backdrop"><form class="modal" id="record-form"><div class="modal-head"><div><span class="eyebrow gold">${record?'EDITAR CADASTRO':'NOVO CADASTRO'}</span><h2>${cfg.title}</h2><p class="muted">${record?'Atualize os campos permitidos deste registro.':'Preencha os campos para salvar no banco de dados.'}</p></div><button class="close-modal" type="button" id="close-modal">×</button></div><div class="form-grid">${fields.map(({f,opts})=>renderField(f,opts,values)).join('')}</div><div class="modal-actions"><button class="outline" type="button" id="cancel-modal">Cancelar</button><button class="primary" type="submit">${record?'Salvar alterações':'Salvar registro'}</button></div><p class="notice" id="form-error"></p></form></div>`;
  $('#close-modal').onclick=$('#cancel-modal').onclick=()=>modal.innerHTML='';
  const form=$('#record-form');
  if(key==='fuelings'||key==='trip_expenses')bindDriverToSource(form,'trip_id','trips');
@@ -297,7 +297,7 @@ function includeCurrentOption(field,options,values){
  const table={drivers:'drivers',trucks:'trucks',trailers:'trailers',trips:'trips',advances:'driver_advances'}[source];
  const row=table?cache[table]?.find(item=>item.id===selected):null;
  if(!row)return options;
- const label=row.full_name||row.plate||row.reference_code||(row.origin_city?\`\${row.origin_city} → \${row.destination_city}\`:String(row.id).slice(0,8));
+ const label=row.full_name||row.plate||row.reference_code||(row.origin_city?`${row.origin_city} → ${row.destination_city}`:String(row.id).slice(0,8));
  return [...options,[row.id,label]];
 }
 
@@ -322,13 +322,13 @@ function renderField(f,opts,values={}){
  const hasValue=Object.prototype.hasOwnProperty.call(values,name)&&values[name]!==null&&values[name]!==undefined;
  const value=hasValue?values[name]:defaultValue;
  const req=required?'required':'';
- if(type==='checkbox')return \`<label class="check-field"><input type="checkbox" name="\${name}" \${Boolean(value)?'checked':''}> \${label}</label>\`;
- if(type==='textarea')return \`<label class="wide">\${label}<textarea name="\${name}" \${req}>\${esc(value??'')}</textarea></label>\`;
- if(type==='select')return \`<label>\${label}<select name="\${name}" \${req}><option value="">Selecione</option>\${opts.map(([v,l])=>\`<option value="\${esc(v)}" \${String(v)===String(value??'')?'selected':''}>\${esc(l)}</option>\`).join('')}</select></label>\`;
+ if(type==='checkbox')return `<label class="check-field"><input type="checkbox" name="${name}" ${Boolean(value)?'checked':''}> ${label}</label>`;
+ if(type==='textarea')return `<label class="wide">${label}<textarea name="${name}" ${req}>${esc(value??'')}</textarea></label>`;
+ if(type==='select')return `<label>${label}<select name="${name}" ${req}><option value="">Selecione</option>${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(value??'')?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
  let inputValue=value??'';
  if(type==='datetime-local')inputValue=toDateTimeLocal(inputValue);
  else if(type==='date'&&inputValue)inputValue=String(inputValue).slice(0,10);
- return \`<label>\${label}<input name="\${name}" type="\${type}" \${req} \${inputValue!==''? \`value="\${esc(inputValue)}"\`:''} \${type==='number'?'step="0.01" min="0"':''}></label>\`;
+ return `<label>${label}<input name="${name}" type="${type}" ${req} ${inputValue!==''? `value="${esc(inputValue)}"`:''} ${type==='number'?'step="0.01" min="0"':''}></label>`;
 }
 
 async function saveForm(e,key,record=null){
