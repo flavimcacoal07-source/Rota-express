@@ -216,12 +216,12 @@ async function renderTable(host,cfg,rows){
   : 'Dados consultados diretamente no Supabase · Exibindo até 250 registros';
  host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${title}</h1><p class="muted">${rows.length} registro(s) encontrado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${hasActions?'<th>Ações</th>':''}</tr></thead><tbody>${displayRowsMarkup(rows,columns,hasActions)}</tbody></table></div><div class="table-foot">${footnote}</div></div>`;
  if(!cfg.readonly)$('#add-record').onclick=()=>openForm(current);
- $('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
- $('[data-edit-id]').forEach(b=>b.addEventListener('click',()=>{
+ document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
+ document.querySelectorAll('[data-edit-id]').forEach(b=>b.addEventListener('click',()=>{
   const record=rows.find(row=>row.id===b.dataset.editId);
   if(record)openForm(current,record);
  }));
- $('[data-delete-id]').forEach(b=>b.addEventListener('click',()=>deleteRecord(current,b.dataset.deleteId)));
+ document.querySelectorAll('[data-delete-id]').forEach(b=>b.addEventListener('click',()=>deleteRecord(current,b.dataset.deleteId)));
 }
 function displayRowsMarkup(rows,columns,hasActions){
  if(!rows.length)return `<tr><td colspan="${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>${hasActions?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>`;
