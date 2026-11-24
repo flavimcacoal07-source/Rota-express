@@ -9,7 +9,8 @@ Interface web responsiva, mobile-first, em português brasileiro, com identidade
 - Painel com contagens reais e viagens pendentes.
 - Resumo financeiro gerencial, somente para gestor, com fretes aprovados, comissão estimada quando há percentual salvo, abastecimentos, despesas, manutenção, pedágios e saldo de adiantamentos.
 - Consulta dos módulos existentes no banco.
-- Inclusão inicial de motoristas, caminhões, carretas, viagens, abastecimentos, despesas, adiantamentos, acertos e manutenção.
+- Inclusão e edição de motoristas, caminhões, carretas, viagens em rascunho/devolvidas, abastecimentos, despesas, adiantamentos, acertos e manutenção.
+- Exclusão de lançamentos operacionais permitidos pelo banco; motoristas, caminhões e carretas são desativados pelo campo Ativo para preservar vínculos e histórico.
 - Ações iniciais de envio, aprovação e devolução de viagens, com registro no histórico.
 
 ## Executar localmente
