@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 import { calculateFinance } from './finance.js';
 import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
+import { filterAndPaginate } from './table-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -93,7 +94,7 @@ const configs = {
  trip_reviews:{title:'Histórico de aprovações',table:'trip_reviews',readonly:true,cols:['created_at','trip_id','previous_status','new_status','reason']},
  document_files:{title:'Documentos',table:'document_files',readonly:true,cols:['original_name','content_type','driver_id','trip_id','created_at']}
 };
-let session=null, profile=null, current='dashboard', cache={}, modalOpen=false;
+let session=null, profile=null, current='dashboard', cache={}, modalOpen=false, tableState={};
 const app=$('#app');
 function toast(msg,type='ok'){let el=$('#toast');if(!el){el=document.createElement('div');el.id='toast';document.body.append(el)}el.className=`toast ${type}`;el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3600)}
 function showSetup(){
@@ -127,11 +128,17 @@ function renderShell(){
  $('#menu').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
 }
 async function navigate(page){current=page;renderShell();await loadPage()}
-async function query(table,select='*'){const {data,error}=await supabase.from(table).select(select).order('created_at',{ascending:false}).limit(250);if(error)throw error;cache[table]=data||[];return cache[table]}
-async function fetchAllRows(table, columns, pageSize=500){
+async function query(table,select='*'){
+ const rows=await fetchAllRows(table,select,500,'created_at',false);
+ cache[table]=rows;
+ return rows;
+}
+async function fetchAllRows(table, columns, pageSize=500, orderColumn='id', ascending=true){
  const rows=[];
  for(let offset=0;;offset+=pageSize){
-  const {data,error}=await supabase.from(table).select(columns).order('id',{ascending:true}).range(offset,offset+pageSize-1);
+  let request=supabase.from(table).select(columns).order(orderColumn,{ascending});
+  if(orderColumn!=='id')request=request.order('id',{ascending:true});
+  const {data,error}=await request.range(offset,offset+pageSize-1);
   if(error)throw error;
   const page=data||[];
   rows.push(...page);
@@ -208,24 +215,66 @@ function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driv
  if(key==='category')return ({alimentacao:'Alimentação',hospedagem:'Hospedagem',manutencao:'Manutenção',estacionamento:'Estacionamento',documentacao:'Documentação',outros:'Outros'})[v]||v;
  return v??'—'}
 async function renderTable(host,cfg,rows){
+ const key=current;
  const title=cfg.title;
  const columns=cfg.cols;
  const hasActions=!cfg.readonly;
- const footnote=['drivers','trucks','trailers'].includes(current)
+ const state=tableState[key]||(tableState[key]={search:'',page:1,pageSize:25});
+ const pageSizes=[25,50,100];
+ const pageSizeOptions=pageSizes.map(size=>'<option value="'+size+'"'+(state.pageSize===size?' selected':'')+'>'+size+'</option>').join('');
+ const footnote=['drivers','trucks','trailers'].includes(key)
   ? 'Para preservar o histórico, desative cadastros já utilizados pelo campo Ativo.'
-  : 'Dados consultados diretamente no Supabase · Exibindo até 250 registros';
- host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${title}</h1><p class="muted">${rows.length} registro(s) encontrado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${hasActions?'<th>Ações</th>':''}</tr></thead><tbody>${displayRowsMarkup(rows,columns,hasActions)}</tbody></table></div><div class="table-foot">${footnote}</div></div>`;
- if(!cfg.readonly)$('#add-record').onclick=()=>openForm(current);
- document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>updateTrip(b.dataset.id,b.dataset.action)));
- document.querySelectorAll('[data-edit-id]').forEach(b=>b.addEventListener('click',()=>{
-  const record=rows.find(row=>row.id===b.dataset.editId);
-  if(record)openForm(current,record);
- }));
- document.querySelectorAll('[data-delete-id]').forEach(b=>b.addEventListener('click',()=>deleteRecord(current,b.dataset.deleteId)));
+  : 'Consulta completa em blocos de 500 registros · Busca e paginação aplicadas à lista.';
+ host.innerHTML=\`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>\${esc(title)}</h1><p class="muted" id="table-count">\${rows.length} registro(s) carregado(s).</p></div>\${cfg.readonly?'':\`<button class="primary" id="add-record">＋ Novo registro</button>\`}</div><div class="panel table-panel"><div class="table-toolbar"><label class="table-search" for="table-search"><span>Buscar nesta lista</span><input id="table-search" type="search" autocomplete="off" placeholder="Nome, placa, cidade, situação..." value="\${esc(state.search)}"></label><label class="page-size-control" for="page-size"><span>Por página</span><select id="page-size">\${pageSizeOptions}</select></label></div><div class="table-scroll"><table><thead><tr>\${columns.map(c=>\`<th>\${esc(columnLabel(c))}</th>\`).join('')}\${hasActions?'<th>Ações</th>':''}</tr></thead><tbody id="table-body"></tbody></table></div><div class="table-pagination"><span class="table-range" id="table-range"></span><div class="table-page-controls"><button class="outline" id="page-prev" type="button">Anterior</button><span id="page-label"></span><button class="outline" id="page-next" type="button">Próxima</button></div></div><div class="table-foot">\${footnote}</div></div>\`;
+ if(!cfg.readonly)$('#add-record').onclick=()=>openForm(key);
+ const refresh=()=>renderTableContent(host,cfg,rows,key);
+ $('#table-search',host).addEventListener('input',event=>{
+  state.search=event.target.value;
+  state.page=1;
+  refresh();
+ });
+ $('#page-size',host).addEventListener('change',event=>{
+  state.pageSize=Number(event.target.value)||25;
+  state.page=1;
+  refresh();
+ });
+ $('#page-prev',host).addEventListener('click',()=>{state.page=Math.max(1,state.page-1);refresh()});
+ $('#page-next',host).addEventListener('click',()=>{state.page+=1;refresh()});
+ refresh();
 }
-function displayRowsMarkup(rows,columns,hasActions){
- if(!rows.length)return `<tr><td colspan="${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>Nenhum registro por enquanto</b><p>Quando houver dados cadastrados, eles aparecerão aqui.</p>${hasActions?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>`;
- return rows.map(r=>`<tr>${columns.map(c=>`<td>${esc(fieldValue(r,c))}</td>`).join('')}${hasActions?`<td class="actions">${recordActions(r,current)}</td>`:''}</tr>`).join('');
+function renderTableContent(host,cfg,rows,key){
+ const columns=cfg.cols;
+ const hasActions=!cfg.readonly;
+ const state=tableState[key];
+ const result=filterAndPaginate(rows,state.search,state.page,state.pageSize,row=>columns.map(column=>fieldValue(row,column)).join(' '));
+ state.page=result.page;
+ const body=$('#table-body',host);
+ if(body)body.innerHTML=displayRowsMarkup(result.pageRows,columns,hasActions,state.search);
+ const count=$('#table-count',host);
+ if(count)count.textContent=result.total+' registro(s) encontrado(s).';
+ const range=$('#table-range',host);
+ if(range)range.textContent=result.total?'Mostrando '+result.startIndex+'–'+result.endIndex+' de '+result.total:'Nenhum registro para exibir';
+ const label=$('#page-label',host);
+ if(label)label.textContent='Página '+result.page+' de '+result.pageCount;
+ const previous=$('#page-prev',host);
+ const next=$('#page-next',host);
+ if(previous)previous.disabled=result.page<=1;
+ if(next)next.disabled=result.page>=result.pageCount;
+ host.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',()=>updateTrip(button.dataset.id,button.dataset.action)));
+ host.querySelectorAll('[data-edit-id]').forEach(button=>button.addEventListener('click',()=>{
+  const record=rows.find(row=>row.id===button.dataset.editId);
+  if(record)openForm(key,record);
+ }));
+ host.querySelectorAll('[data-delete-id]').forEach(button=>button.addEventListener('click',()=>deleteRecord(key,button.dataset.deleteId)));
+}
+function displayRowsMarkup(rows,columns,hasActions,searchTerm=''){
+ if(!rows.length){
+  const searched=Boolean(searchTerm.trim());
+  const title=searched?'Nenhum resultado encontrado':'Nenhum registro por enquanto';
+  const message=searched?'Tente outro termo de busca.':'Quando houver dados cadastrados, eles aparecerão aqui.';
+  return \`<tr><td colspan="\${columns.length+(hasActions?1:0)}"><div class="empty-state"><div class="empty-icon">⌁</div><b>\${title}</b><p>\${message}</p>\${hasActions&&!searched?'<small>Use o botão “Novo registro” para começar.</small>':''}</div></td></tr>\`;
+ }
+ return rows.map(row=>\`<tr>\${columns.map(column=>\`<td>\${esc(fieldValue(row,column))}</td>\`).join('')}\${hasActions?\`<td class="actions">\${recordActions(row,current)}</td>\`:''}</tr>\`).join('');
 }
 function recordActions(record,key){
  if(key==='trips'){
