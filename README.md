@@ -8,7 +8,7 @@ Interface web responsiva, mobile-first, em português brasileiro, com identidade
 - Leitura do perfil autenticado e bloqueio de perfis inativos ou que não sejam gestores.
 - Painel com contagens reais e viagens pendentes.
 - Resumo financeiro gerencial, somente para gestor, com fretes aprovados, comissão estimada quando há percentual salvo, abastecimentos, despesas, manutenção, pedágios e saldo de adiantamentos.
-- Consulta dos módulos existentes no banco.
+- Consulta de todos os registros dos módulos, com busca por texto, paginação de 25/50/100 itens e carregamento em blocos de 500 registros.
 - Inclusão e edição de motoristas, caminhões, carretas, viagens em rascunho/devolvidas, abastecimentos, despesas, adiantamentos, acertos e manutenção.
 - Exclusão de lançamentos operacionais permitidos pelo banco; motoristas, caminhões e carretas são desativados pelo campo Ativo para preservar vínculos e histórico.
 - Ações iniciais de envio, aprovação e devolução de viagens, com registro no histórico.
