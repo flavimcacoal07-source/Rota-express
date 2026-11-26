@@ -3,38 +3,18 @@ import './style.css';
 import { calculateFinance } from './finance.js';
 import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
 import { filterAndPaginate } from './table-utils.js';
+import { authErrorMessage, validateSupabaseConfig } from './auth-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 
-function isPublicSupabaseKey(key) {
- if (key.startsWith('sb_publishable_')) return true;
- const parts = key.split('.');
- if (parts.length !== 3) return false;
- try {
-  const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-  const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-  return JSON.parse(atob(padded)).role === 'anon';
- } catch {
-  return false;
- }
-}
-
 let supabase = null;
 let supabaseConfigMessage = '';
 try {
- if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('SEU-PROJETO') || supabaseKey.includes('SUA_CHAVE')) {
-  throw new Error('Configure a URL e a chave pública do Supabase nas variáveis do ambiente.');
- }
- const parsedUrl = new URL(supabaseUrl);
- if (parsedUrl.protocol !== 'https:' || parsedUrl.origin !== SUPABASE_PROJECT_ORIGIN) {
-  throw new Error('A URL configurada não corresponde ao projeto Supabase do ROTA EXPRESS.');
- }
- if (!isPublicSupabaseKey(supabaseKey)) {
-  throw new Error('A chave não foi reconhecida como publishable ou anon. Chaves secretas não são aceitas no navegador.');
- }
- supabase = createClient(parsedUrl.origin, supabaseKey);
+ const validated = validateSupabaseConfig(supabaseUrl, supabaseKey, SUPABASE_PROJECT_ORIGIN);
+ if (!validated.ok) throw new Error(validated.message);
+ supabase = createClient(validated.url, validated.key);
 } catch (error) {
  supabaseConfigMessage = error.message || 'Não foi possível validar a configuração do Supabase.';
 }
@@ -101,24 +81,64 @@ function showSetup(){
  app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>O aplicativo precisa das duas variáveis públicas do Supabase para habilitar o acesso.</p></section><section class="login-panel"><div class="login-card"><span class="eyebrow gold">CONFIGURAÇÃO NECESSÁRIA</span><h2>Conecte o projeto Supabase</h2><p class="muted">Configure estas variáveis no ambiente de execução (ou nas variáveis de ambiente da Vercel):</p><p><b>VITE_SUPABASE_URL</b><br><code>https://vbxkuntxukparvemwuqp.supabase.co</code></p><p><b>VITE_SUPABASE_PUBLISHABLE_KEY</b><br><code>Chave sb_publishable_… do projeto</code></p><p class="notice">${esc(supabaseConfigMessage || 'Use somente a chave publishable ou anon. Nunca use service_role ou uma chave secreta no navegador.')}</p><p class="small-note">Depois de salvar as variáveis, gere uma nova execução/build da aplicação.</p></div></section></div>`;
 }
 function showLogin(message=''){
- app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required value="flavimcacoal70@gmail.com" placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
+ app.innerHTML=`<div class="login-shell"><section class="login-brand"><div class="brand-mark">RE</div><span class="eyebrow">GESTÃO INTELIGENTE DE TRANSPORTE</span><h1>ROTA <span>EXPRESS</span></h1><p>Controle operacional, financeiro e acompanhamento de viagens em um só lugar.</p><div class="login-foot">PLATAFORMA DE GESTÃO • ${new Date().getFullYear()}</div></section><section class="login-panel"><form class="login-card" id="login"><span class="eyebrow gold">ÁREA RESTRITA</span><h2>Acessar plataforma</h2><p class="muted">Entre com seu e-mail e senha cadastrados.</p><label>E-mail<input name="email" type="email" autocomplete="username" required value="flavimcacoal70@gmail.com" placeholder="seu@email.com"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button class="primary full" type="submit">Entrar no sistema</button><button class="text-button" type="button" id="forgot">Esqueci minha senha</button><p class="notice" id="login-msg" role="alert" aria-live="polite">${esc(message)}</p><p class="small-note">Acesso protegido pelo Supabase Auth e pelas permissões do banco.</p></form></section></div>`;
  $('#login').addEventListener('submit',login);
  $('#forgot').addEventListener('click',forgotPassword);
 }
-async function login(e){e.preventDefault();const f=new FormData(e.currentTarget);const b=$('button[type=submit]',e.currentTarget);b.disabled=true;b.textContent='Verificando…';
- const {error}=await supabase.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});
- if(error){$('#login-msg').textContent=error.message;b.disabled=false;b.textContent='Entrar no sistema';return}
+async function login(e){
+ e.preventDefault();
+ const f=new FormData(e.currentTarget);
+ const b=$('button[type=submit]',e.currentTarget);
+ b.disabled=true;
+ b.textContent='Verificando…';
+ let error=null;
+ try {
+  const result=await supabase.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});
+  error=result.error;
+ } catch(caught) {
+  error=caught;
+ }
+ if(error){
+  $('#login-msg').textContent=authErrorMessage(error,'Não foi possível entrar. Verifique sua conexão e tente novamente.');
+  b.disabled=false;
+  b.textContent='Entrar no sistema';
+  return;
+ }
  await boot();
 }
-async function forgotPassword(){const email=$('input[name=email]').value.trim();if(!email){$('#login-msg').textContent='Informe seu e-mail para receber o link.';return}
- const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin});
- $('#login-msg').textContent=error?error.message:'Se o e-mail estiver cadastrado, enviaremos as instruções de recuperação.'}
+async function forgotPassword(){
+ const email=$('input[name=email]').value.trim();
+ if(!email){$('#login-msg').textContent='Informe seu e-mail para receber o link.';return}
+ try {
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin});
+  $('#login-msg').textContent=error
+   ?authErrorMessage(error,'Não foi possível solicitar a recuperação de senha.')
+   :'Se o e-mail estiver cadastrado, enviaremos as instruções de recuperação.';
+ } catch(error) {
+  $('#login-msg').textContent=authErrorMessage(error,'Não foi possível solicitar a recuperação de senha. Verifique sua conexão.');
+ }
+}
 async function boot(){
- const {data:{session:s}}=await supabase.auth.getSession();session=s;
- if(!session){showLogin();return}
- const {data:p,error}=await supabase.from('profiles').select('id,full_name,role,active').eq('id',session.user.id).maybeSingle();
- if(error||!p||!p.active||p.role!=='gestor'){await supabase.auth.signOut();showLogin('Este acesso não possui perfil de gestor ativo.');return}
- profile=p;renderShell();await loadPage();
+ try {
+  const {data:{session:s},error:sessionError}=await supabase.auth.getSession();
+  if(sessionError)throw sessionError;
+  session=s;
+  if(!session){showLogin();return}
+  const {data:p,error}=await supabase.from('profiles').select('id,full_name,role,active').eq('id',session.user.id).maybeSingle();
+  if(error)throw error;
+  if(!p||!p.active||p.role!=='gestor'){
+   await supabase.auth.signOut();
+   showLogin('Este acesso não possui perfil de gestor ativo.');
+   return;
+  }
+  profile=p;
+  renderShell();
+  await loadPage();
+ } catch(error) {
+  session=null;
+  profile=null;
+  showLogin('Não foi possível verificar seu acesso. '+authErrorMessage(error,'Tente novamente.'));
+ }
 }
 function renderShell(){
  const nav=Object.entries(labels).filter(([key])=>key!=='dashboard').map(([key,name])=>`<button class="nav-item ${current===key?'active':''}" data-page="${key}"><span class="nav-icon">${icons[key]||'·'}</span>${name}</button>`).join('');
@@ -377,7 +397,8 @@ function renderField(f,opts,values={}){
  let inputValue=value??'';
  if(type==='datetime-local')inputValue=toDateTimeLocal(inputValue);
  else if(type==='date'&&inputValue)inputValue=String(inputValue).slice(0,10);
- return `<label>${label}<input name="${name}" type="${type}" ${req} ${inputValue!==''? `value="${esc(inputValue)}"`:''} ${type==='number'?'step="0.01" min="0"':''}></label>`;
+ const numericConstraints=type==='number'?`step="0.01" min="0" ${name==='commission_percent'?'max="100"':''}`:'';
+ return `<label>${label}<input name="${name}" type="${type}" ${req} ${inputValue!==''? `value="${esc(inputValue)}"`:''} ${numericConstraints}></label>`;
 }
 
 async function saveForm(e,key,record=null){
