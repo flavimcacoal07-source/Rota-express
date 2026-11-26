@@ -3,7 +3,7 @@ import './style.css';
 import { calculateFinance } from './finance.js';
 import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
 import { filterAndPaginate } from './table-utils.js';
-import { authErrorMessage, validateSupabaseConfig } from './auth-utils.js';
+import { authErrorMessage, canAccessManager, validateSupabaseConfig } from './auth-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -126,7 +126,7 @@ async function boot(){
   if(!session){showLogin();return}
   const {data:p,error}=await supabase.from('profiles').select('id,full_name,role,active').eq('id',session.user.id).maybeSingle();
   if(error)throw error;
-  if(!p||!p.active||p.role!=='gestor'){
+  if(!canAccessManager(p)){
    await supabase.auth.signOut();
    showLogin('Este acesso não possui perfil de gestor ativo.');
    return;
