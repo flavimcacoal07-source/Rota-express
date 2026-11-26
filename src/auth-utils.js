@@ -65,6 +65,10 @@ export function validateSupabaseConfig(urlValue, keyValue, expectedOrigin) {
   return { ok: true, url: parsedUrl.origin, key, message: '' };
 }
 
+export function canAccessManager(profile) {
+  return Boolean(profile && profile.active === true && profile.role === 'gestor');
+}
+
 export function authErrorMessage(error, fallback = 'Não foi possível concluir a autenticação.') {
   if (typeof error === 'string' && error.trim()) return error.trim();
   const message = typeof error?.message === 'string' ? error.message.trim() : '';
