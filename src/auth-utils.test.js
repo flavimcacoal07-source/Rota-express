@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   authErrorMessage,
+  canAccessManager,
   isPublicSupabaseKey,
   validateSupabaseConfig,
 } from './auth-utils.js';
@@ -73,4 +74,11 @@ test('usa mensagem do erro de autenticação e fallback quando necessário', () 
   assert.equal(authErrorMessage({ message: 'Credenciais inválidas' }), 'Credenciais inválidas');
   assert.equal(authErrorMessage({ message: '  ' }, 'Tente novamente.'), 'Tente novamente.');
   assert.equal(authErrorMessage('Falha de rede'), 'Falha de rede');
+});
+
+test('permite somente perfil gestor ativo na interface administrativa', () => {
+  assert.equal(canAccessManager({ role: 'gestor', active: true }), true);
+  assert.equal(canAccessManager({ role: 'gestor', active: false }), false);
+  assert.equal(canAccessManager({ role: 'motorista', active: true }), false);
+  assert.equal(canAccessManager(null), false);
 });
