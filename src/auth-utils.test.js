@@ -82,3 +82,35 @@ test('permite somente perfil gestor ativo na interface administrativa', () => {
   assert.equal(canAccessManager({ role: 'motorista', active: true }), false);
   assert.equal(canAccessManager(null), false);
 });
+
+
+test('permite vincular somente cadastro de motorista ativo e ainda sem conta', async () => {
+  const { canLinkDriverAccount } = await import('./auth-utils.js');
+  assert.equal(canLinkDriverAccount({ active: true, auth_user_id: null }), true);
+  assert.equal(canLinkDriverAccount({ active: true, auth_user_id: 'user-1' }), false);
+  assert.equal(canLinkDriverAccount({ active: false, auth_user_id: null }), false);
+  assert.equal(canLinkDriverAccount(null), false);
+});
+
+test('lista apenas perfis ativos de motorista ainda não vinculados', async () => {
+  const { availableDriverProfiles } = await import('./auth-utils.js');
+  const profiles = [
+    { id: 'manager-1', full_name: 'Gestor', role: 'gestor', active: true },
+    { id: 'driver-inactive', full_name: 'Motorista Inativo', role: 'motorista', active: false },
+    { id: 'driver-linked', full_name: 'Já Vinculado', role: 'motorista', active: true },
+    { id: 'driver-b', full_name: 'Bruno', role: 'motorista', active: true },
+    { id: 'driver-a', full_name: 'Álvaro', role: 'motorista', active: true },
+  ];
+  const drivers = [{ id: 'record-1', auth_user_id: 'driver-linked' }];
+  const available = availableDriverProfiles(profiles, drivers);
+  assert.deepEqual(available.map(profile => profile.id), ['driver-a', 'driver-b']);
+});
+
+test('rótulo da conta usa nome e sufixo do identificador para desambiguar', async () => {
+  const { driverProfileLabel } = await import('./auth-utils.js');
+  assert.equal(
+    driverProfileLabel({ id: '12345678-1234-1234-1234-abcdef987654', full_name: 'João' }),
+    'João · ID …abcdef987654',
+  );
+  assert.equal(driverProfileLabel({ id: null, full_name: '  ' }), 'Motorista sem nome');
+});
