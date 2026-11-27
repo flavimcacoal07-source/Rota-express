@@ -74,3 +74,35 @@ export function authErrorMessage(error, fallback = 'Não foi possível concluir 
   const message = typeof error?.message === 'string' ? error.message.trim() : '';
   return message || fallback;
 }
+
+
+export function canLinkDriverAccount(driver) {
+  return Boolean(driver && driver.active === true && !driver.auth_user_id);
+}
+
+export function availableDriverProfiles(profiles, drivers) {
+  const linkedIds = new Set(
+    (Array.isArray(drivers) ? drivers : [])
+      .map(driver => driver?.auth_user_id)
+      .filter(Boolean),
+  );
+
+  return (Array.isArray(profiles) ? profiles : [])
+    .filter(profile =>
+      profile?.id &&
+      profile.role === 'motorista' &&
+      profile.active === true &&
+      !linkedIds.has(profile.id),
+    )
+    .sort((a, b) =>
+      String(a.full_name ?? '').localeCompare(String(b.full_name ?? ''), 'pt-BR', {
+        sensitivity: 'base',
+      }),
+    );
+}
+
+export function driverProfileLabel(profile) {
+  const name = String(profile?.full_name ?? '').trim() || 'Motorista sem nome';
+  const suffix = String(profile?.id ?? '').slice(-8);
+  return suffix ? name + ' · ID …' + suffix : name;
+}
