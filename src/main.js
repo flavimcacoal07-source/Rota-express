@@ -3,7 +3,7 @@ import './style.css';
 import { calculateFinance } from './finance.js';
 import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
 import { filterAndPaginate } from './table-utils.js';
-import { authErrorMessage, canAccessManager, validateSupabaseConfig } from './auth-utils.js';
+import { authErrorMessage, canAccessManager, validateSupabaseConfig, availableDriverProfiles, canLinkDriverAccount, driverProfileLabel } from './auth-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -36,7 +36,7 @@ const configs = {
  drivers:{title:'Motoristas',table:'drivers',fields:[
   ['full_name','Nome completo','text',true],['cpf','CPF','text'],['phone','Telefone','tel'],['email','E-mail','email'],
   ['commission_percent','Comissão (%)','number',true,'15'],['notes','Observações','textarea'],['active','Ativo','checkbox',false,true]
- ],cols:['full_name','cpf','phone','commission_percent','active']},
+ ],cols:['full_name','cpf','phone','commission_percent','active','account_link']},
  trucks:{title:'Caminhões',table:'trucks',fields:[
   ['plate','Placa','text',true],['description','Descrição / modelo','text'],['arla_32_enabled','Utiliza ARLA 32','checkbox',false,false],['active','Ativo','checkbox',false,true]
  ],cols:['plate','description','arla_32_enabled','active']},
@@ -219,7 +219,7 @@ async function financeDashboard(host){
  host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CONTROLE GERENCIAL</span><h1>Financeiro</h1><p class="muted">Resumo acumulado dos lançamentos disponíveis no banco de dados.</p></div></div><div class="finance-grid">${metrics.map(([label,value,note,emphasis])=>`<article class="finance-card ${emphasis?'emphasis':''}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('')}</div><section class="panel finance-note"><b>Como interpretar este resumo</b><p class="muted">O frete considera apenas viagens aprovadas. A comissão é estimada somente quando existe percentual gravado na viagem. Abastecimentos, despesas, manutenção, pedágios e adiantamentos são apresentados separadamente; este painel ainda não substitui conciliação, fechamento ou demonstrativo contábil.</p><p class="muted">Viagens aguardando aprovação: <b>${totals.pendingTripsCount}</b> · Viagens aprovadas: <b>${totals.approvedTripsCount}</b></p></section>`;
 }
 function statusName(s){return ({rascunho:'Rascunho',pendente:'Pendente',aprovada:'Aprovada',devolvida:'Devolvida'})[s]||s||'—'}
-function fieldValue(row,key){let v=row[key];if(key==='driver_id')return row.driver?.full_name||cache.drivers?.find(x=>x.id===v)?.full_name||v?.slice(0,8)||'—';
+function fieldValue(row,key){let v=row[key];if(key==='account_link')return row.auth_user_id?'Conta vinculada':row.active?'Sem conta vinculada':'Inativo';if(key==='driver_id')return row.driver?.full_name||cache.drivers?.find(x=>x.id===v)?.full_name||v?.slice(0,8)||'—';
  if(key==='trip_id'){
   const trip=row.trip||cache.trips?.find(x=>x.id===v);
   return trip?`${trip.origin_city} → ${trip.destination_city}`:v?.slice(0,8)||'—';
@@ -286,6 +286,10 @@ function renderTableContent(host,cfg,rows,key){
   if(record)openForm(key,record);
  }));
  host.querySelectorAll('[data-delete-id]').forEach(button=>button.addEventListener('click',()=>deleteRecord(key,button.dataset.deleteId)));
+ host.querySelectorAll('[data-link-driver-id]').forEach(button=>button.addEventListener('click',()=>{
+  const driver=rows.find(row=>row.id===button.dataset.linkDriverId);
+  if(driver)openDriverAccountLink(driver);
+ }));
 }
 function displayRowsMarkup(rows,columns,hasActions,searchTerm=''){
  if(!rows.length){
@@ -297,6 +301,10 @@ function displayRowsMarkup(rows,columns,hasActions,searchTerm=''){
  return rows.map(row=>`<tr>${columns.map(column=>`<td>${esc(fieldValue(row,column))}</td>`).join('')}${hasActions?`<td class="actions">${recordActions(row,current)}</td>`:''}</tr>`).join('');
 }
 function recordActions(record,key){
+ if(key==='drivers'){
+  const linkAction=canLinkDriverAccount(record)?`<button class="mini-action edit" data-link-driver-id="${esc(record.id)}">Vincular conta</button>`:'';
+  return `<button class="mini-action edit" data-edit-id="${esc(record.id)}">Editar</button>${linkAction}`;
+ }
  if(key==='trips'){
   const canEdit=['rascunho','devolvida'].includes(record.status);
   return `${tripActions(record)}${canEdit?`<button class="mini-action edit" data-edit-id="${esc(record.id)}">Editar</button>`:''}`;
@@ -304,6 +312,58 @@ function recordActions(record,key){
  const canDelete=['fuelings','trip_expenses','driver_advances','advance_settlements','maintenance_records'].includes(key);
  return `<button class="mini-action edit" data-edit-id="${esc(record.id)}">Editar</button>${canDelete?`<button class="mini-action delete" data-delete-id="${esc(record.id)}">Excluir</button>`:''}`;
 }
+
+async function openDriverAccountLink(driver){
+ if(!canLinkDriverAccount(driver)){
+  toast('Este cadastro não está disponível para vincular uma conta.','error');
+  return;
+ }
+ const modal=$('#modal-root');
+ modal.innerHTML='<div class="modal-backdrop"><section class="modal" aria-labelledby="driver-account-title"><div class="modal-head"><div><span class="eyebrow gold">ACESSO DO MOTORISTA</span><h2 id="driver-account-title">Vincular conta existente</h2><p class="muted">Cadastro: '+esc(driver.full_name)+'</p></div><button class="close-modal" type="button" id="driver-account-close" aria-label="Fechar">×</button></div><div id="driver-account-content"><div class="loading">Consultando perfis ativos…</div></div></section></div>';
+ $('#driver-account-close',modal).onclick=()=>modal.innerHTML='';
+ const content=$('#driver-account-content',modal);
+ try{
+  const {data:profiles,error}=await supabase.from('profiles')
+   .select('id,full_name,role,active')
+   .eq('role','motorista')
+   .eq('active',true)
+   .order('full_name',{ascending:true});
+  if(error)throw error;
+  const candidates=availableDriverProfiles(profiles,cache.drivers||[]);
+  if(!candidates.length){
+   content.innerHTML='<div class="empty-state compact"><b>Nenhuma conta disponível</b><p>Não foi encontrada uma conta já cadastrada com perfil ativo de motorista e ainda sem vínculo.</p><small>Cadastre a conta e o perfil fora deste fluxo. Aqui apenas vinculamos contas existentes; não criamos usuários nem enviamos convites.</small></div><div class="modal-actions"><button class="outline" type="button" id="driver-account-done">Fechar</button></div>';
+   $('#driver-account-done',modal).onclick=()=>modal.innerHTML='';
+   return;
+  }
+  const options=candidates.map(item=>'<option value="'+esc(item.id)+'">'+esc(driverProfileLabel(item))+'</option>').join('');
+  content.innerHTML='<p class="muted">Selecione uma conta já existente. O identificador abreviado ajuda a diferenciar pessoas com nomes iguais.</p><label>Conta ativa de motorista<select id="driver-account-profile" required><option value="">Selecione uma conta</option>'+options+'</select></label><p class="small-note">O vínculo é validado novamente pelo Supabase. Nenhuma conta será criada ou convidada.</p><div class="modal-actions"><button class="outline" type="button" id="driver-account-cancel">Cancelar</button><button class="primary" type="button" id="driver-account-confirm">Vincular conta</button></div><p class="notice" id="driver-account-error" role="alert" aria-live="polite"></p>';
+  $('#driver-account-cancel',modal).onclick=()=>modal.innerHTML='';
+  $('#driver-account-confirm',modal).onclick=async()=>{
+   const selectedId=$('#driver-account-profile',modal).value;
+   const selected=candidates.find(item=>item.id===selectedId);
+   const errorHost=$('#driver-account-error',modal);
+   const confirmButton=$('#driver-account-confirm',modal);
+   if(!selected){errorHost.textContent='Selecione uma conta para continuar.';return}
+   confirmButton.disabled=true;
+   confirmButton.textContent='Vinculando…';
+   try{
+    const {error:linkError}=await supabase.rpc('link_driver_account',{p_driver_id:driver.id,p_auth_user_id:selected.id});
+    if(linkError)throw linkError;
+    modal.innerHTML='';
+    toast('Conta de motorista vinculada com sucesso.');
+    await loadPage();
+   }catch(error){
+    errorHost.textContent=authErrorMessage(error,'Não foi possível vincular a conta. Atualize a lista e tente novamente.');
+    confirmButton.disabled=false;
+    confirmButton.textContent='Vincular conta';
+   }
+  };
+ }catch(error){
+  content.innerHTML='<div class="empty-state compact"><b>Não foi possível consultar as contas</b><p>'+esc(authErrorMessage(error,'Verifique a conexão e as permissões.'))+'</p></div><div class="modal-actions"><button class="outline" type="button" id="driver-account-error-close">Fechar</button></div>';
+  $('#driver-account-error-close',modal).onclick=()=>modal.innerHTML='';
+ }
+}
+
 async function deleteRecord(key,id){
  const cfg=configs[key];
  const allowed=['fuelings','trip_expenses','driver_advances','advance_settlements','maintenance_records'];
