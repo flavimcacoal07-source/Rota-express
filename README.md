@@ -12,6 +12,7 @@ Interface web responsiva, mobile-first, em português brasileiro, com identidade
 - Inclusão e edição de motoristas, caminhões, carretas, viagens em rascunho/devolvidas, abastecimentos, despesas, adiantamentos, acertos e manutenção.
 - Exclusão de lançamentos operacionais permitidos pelo banco; motoristas, caminhões e carretas são desativados pelo campo Ativo para preservar vínculos e histórico.
 - Ações iniciais de envio, aprovação e devolução de viagens, com registro no histórico.
+- Vínculo de um cadastro de motorista a uma conta Supabase já existente, somente quando o perfil `motorista` está ativo e ainda não foi associado; esse fluxo não cria usuários nem envia convites.
 
 ## Executar localmente
 
