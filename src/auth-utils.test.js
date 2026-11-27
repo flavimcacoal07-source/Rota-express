@@ -110,7 +110,7 @@ test('rótulo da conta usa nome e sufixo do identificador para desambiguar', asy
   const { driverProfileLabel } = await import('./auth-utils.js');
   assert.equal(
     driverProfileLabel({ id: '12345678-1234-1234-1234-abcdef987654', full_name: 'João' }),
-    'João · ID …abcdef987654',
+    'João · ID …ef987654',
   );
   assert.equal(driverProfileLabel({ id: null, full_name: '  ' }), 'Motorista sem nome');
 });
