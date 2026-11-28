@@ -3,6 +3,7 @@ import './style.css';
 import { calculateFinance } from './finance.js';
 import { normalizeRecordValues, toDateTimeLocal } from './record-utils.js';
 import { filterAndPaginate } from './table-utils.js';
+import { buildCsv } from './csv-utils.js';
 import { authErrorMessage, canAccessManager, validateSupabaseConfig, availableDriverProfiles, canLinkDriverAccount, driverProfileLabel } from './auth-utils.js';
 
 const SUPABASE_PROJECT_ORIGIN = 'https://vbxkuntxukparvemwuqp.supabase.co';
@@ -230,7 +231,8 @@ function fieldValue(row,key){let v=row[key];if(key==='account_link')return row.a
  if(key==='active'||key==='full_tank'||key==='arla_32_enabled')return v?'Sim':'Não';
  if(key.endsWith('_at')||key.endsWith('_date'))return date(v);
  if(key==='status'||key==='previous_status'||key==='new_status')return statusName(v);
- if(key==='freight_gross'||key==='amount'||key==='amount_applied'||key==='total_amount'||key==='unit_price')return money(v);
+ if(key==='freight_gross'||key==='amount'||key==='amount_applied'||key==='total_amount'||key==='unit_price'||key==='toll_amount')return money(v);
+ if(['commission_percent','commission_percent_snapshot','distance_km','liters','odometer_km'].includes(key)&&v!==null&&v!==undefined)return Number(v).toLocaleString('pt-BR',{maximumFractionDigits:2});
  if(key==='fuel_type')return ({diesel_s10:'Diesel S10',diesel_s500:'Diesel S500',arla_32:'ARLA 32'})[v]||v;
  if(key==='category')return ({alimentacao:'Alimentação',hospedagem:'Hospedagem',manutencao:'Manutenção',estacionamento:'Estacionamento',documentacao:'Documentação',outros:'Outros'})[v]||v;
  return v??'—'}
@@ -245,7 +247,7 @@ async function renderTable(host,cfg,rows){
  const footnote=['drivers','trucks','trailers'].includes(key)
   ? 'Para preservar o histórico, desative cadastros já utilizados pelo campo Ativo.'
   : 'Consulta completa em blocos de 500 registros · Busca e paginação aplicadas à lista.';
- host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${esc(title)}</h1><p class="muted" id="table-count">${rows.length} registro(s) carregado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-toolbar"><label class="table-search" for="table-search"><span>Buscar nesta lista</span><input id="table-search" type="search" autocomplete="off" placeholder="Nome, placa, cidade, situação..." value="${esc(state.search)}"></label><label class="page-size-control" for="page-size"><span>Por página</span><select id="page-size">${pageSizeOptions}</select></label></div><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${hasActions?'<th>Ações</th>':''}</tr></thead><tbody id="table-body"></tbody></table></div><div class="table-pagination"><span class="table-range" id="table-range"></span><div class="table-page-controls"><button class="outline" id="page-prev" type="button">Anterior</button><span id="page-label"></span><button class="outline" id="page-next" type="button">Próxima</button></div></div><div class="table-foot">${footnote}</div></div>`;
+ host.innerHTML=`<div class="page-heading"><div><span class="eyebrow gold">CADASTROS E CONTROLES</span><h1>${esc(title)}</h1><p class="muted" id="table-count">${rows.length} registro(s) carregado(s).</p></div>${cfg.readonly?'':`<button class="primary" id="add-record">＋ Novo registro</button>`}</div><div class="panel table-panel"><div class="table-toolbar"><label class="table-search" for="table-search"><span>Buscar nesta lista</span><input id="table-search" type="search" autocomplete="off" placeholder="Nome, placa, cidade, situação..." value="${esc(state.search)}"></label><label class="page-size-control" for="page-size"><span>Por página</span><select id="page-size">${pageSizeOptions}</select></label><button class="outline export-button" id="export-csv" type="button">Exportar CSV</button></div><div class="table-scroll"><table><thead><tr>${columns.map(c=>`<th>${esc(columnLabel(c))}</th>`).join('')}${hasActions?'<th>Ações</th>':''}</tr></thead><tbody id="table-body"></tbody></table></div><div class="table-pagination"><span class="table-range" id="table-range"></span><div class="table-page-controls"><button class="outline" id="page-prev" type="button">Anterior</button><span id="page-label"></span><button class="outline" id="page-next" type="button">Próxima</button></div></div><div class="table-foot">${footnote}</div></div>`;
  if(!cfg.readonly)$('#add-record').onclick=()=>openForm(key);
  const refresh=()=>renderTableContent(host,cfg,rows,key);
  $('#table-search',host).addEventListener('input',event=>{
@@ -258,10 +260,34 @@ async function renderTable(host,cfg,rows){
   state.page=1;
   refresh();
  });
+ $('#export-csv',host).addEventListener('click',()=>exportTableCsv(key,cfg,rows));
  $('#page-prev',host).addEventListener('click',()=>{state.page=Math.max(1,state.page-1);refresh()});
  $('#page-next',host).addEventListener('click',()=>{state.page+=1;refresh()});
  refresh();
 }
+function exportTableCsv(key,cfg,rows){
+ const columns=cfg.cols;
+ const state=tableState[key]||{search:''};
+ const result=filterAndPaginate(rows,state.search,1,Math.max(rows.length,1),row=>columns.map(column=>fieldValue(row,column)).join(' '));
+ const csv=buildCsv(columns.map(columnLabel),result.pageRows,row=>columns.map(column=>csvExportValue(row,column)));
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+ const objectUrl=URL.createObjectURL(blob);
+ const link=document.createElement('a');
+ link.href=objectUrl;
+ link.download='rota-express-'+key+'-'+today()+'.csv';
+ document.body.appendChild(link);
+ link.click();
+ link.remove();
+ URL.revokeObjectURL(objectUrl);
+ toast(result.total+' registro(s) exportado(s).');
+}
+function csvExportValue(row,column){
+ if(['commission_percent','commission_percent_snapshot','distance_km','liters','odometer_km'].includes(column)&&row[column]!==null&&row[column]!==undefined){
+  return Number(row[column]).toLocaleString('pt-BR',{maximumFractionDigits:2});
+ }
+ return fieldValue(row,column);
+}
+
 function renderTableContent(host,cfg,rows,key){
  const columns=cfg.cols;
  const hasActions=!cfg.readonly;
@@ -375,7 +401,7 @@ async function deleteRecord(key,id){
  await loadPage();
 }
 
-function columnLabel(c){return ({full_name:'Nome',cpf:'CPF',phone:'Telefone',commission_percent:'Comissão',active:'Ativo',plate:'Placa',description:'Descrição',arla_32_enabled:'ARLA 32',trip_date:'Data',driver_id:'Motorista',origin_city:'Origem',destination_city:'Destino',freight_gross:'Frete bruto',status:'Situação',fueling_at:'Data',fuel_type:'Tipo',liters:'Litros',unit_price:'Preço/L',total_amount:'Total',full_tank:'Tanque cheio',category:'Categoria',amount:'Valor',expense_at:'Data',reference_code:'Referência',advance_date:'Data',settled_at:'Data acerto',advance_id:'Adiantamento',amount_applied:'Valor aplicado',maintenance_date:'Data',truck_id:'Caminhão',trailer_id:'Carreta',next_due_date:'Próxima revisão',created_at:'Data',trip_id:'Viagem',previous_status:'Situação anterior',new_status:'Nova situação',original_name:'Arquivo',content_type:'Tipo arquivo',reason:'Motivo'})[c]||c}
+function columnLabel(c){return ({full_name:'Nome',cpf:'CPF',phone:'Telefone',commission_percent:'Comissão (%)',commission_percent_snapshot:'Comissão histórica (%)',active:'Ativo',plate:'Placa',description:'Descrição',arla_32_enabled:'ARLA 32',trip_date:'Data',driver_id:'Motorista',origin_city:'Origem',destination_city:'Destino',freight_gross:'Frete bruto',distance_km:'Distância (km)',toll_mode:'Responsável pelo pedágio',toll_amount:'Valor do pedágio',status:'Situação',fueling_at:'Data',fuel_type:'Tipo',liters:'Litros',unit_price:'Preço/L',total_amount:'Total',full_tank:'Tanque cheio',category:'Categoria',amount:'Valor',expense_at:'Data',reference_code:'Referência',advance_date:'Data',settled_at:'Data acerto',advance_id:'Adiantamento',amount_applied:'Valor aplicado',maintenance_date:'Data',truck_id:'Caminhão',trailer_id:'Carreta',next_due_date:'Próxima revisão',odometer_km:'Odômetro (km)',created_at:'Data',trip_id:'Viagem',notes:'Observações',previous_status:'Situação anterior',new_status:'Nova situação',original_name:'Arquivo',content_type:'Tipo arquivo',reason:'Motivo'})[c]||c}
 function tripActions(r){if(r.status==='rascunho')return `<button class="mini-action approve" data-action="pendente" data-id="${r.id}">Enviar</button>`;if(r.status==='pendente')return `<button class="mini-action approve" data-action="aprovada" data-id="${r.id}">Aprovar</button><button class="mini-action return" data-action="devolvida" data-id="${r.id}">Devolver</button>`;return `<span class="status">${statusName(r.status)}</span>`}
 async function updateTrip(id,status){let reason=null;if(status==='devolvida'){reason=prompt('Informe o motivo da devolução:');if(!reason?.trim())return}
  const {data:currentTrip,error:readError}=await supabase.from('trips').select('status').eq('id',id).single();
