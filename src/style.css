@@ -32,7 +32,9 @@
 .table-page-controls span{min-width:92px;text-align:center;font-size:10px;color:#657386}
 .table-page-controls button{min-height:32px;padding:7px 11px;font-size:10px}
 .table-page-controls button:disabled{opacity:.42;cursor:not-allowed}
+.export-button{height:39px;align-self:flex-end;white-space:nowrap}
 @media(max-width:720px){
+ .export-button{width:100%;align-self:stretch}
  .table-toolbar{align-items:stretch;flex-direction:column}
  .table-search{max-width:none}
  .table-pagination{align-items:flex-start;flex-direction:column}
