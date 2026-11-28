@@ -1,4 +1,4 @@
-const FORMULA_PREFIX = /^[\\u0000-\\u0020]*[=+\\-@]/;
+const FORMULA_PREFIX = /^[\u0000-\u0020]*[=+\-@]/;
 
 function escapeCsvCell(value) {
   const text = String(value ?? '');
@@ -15,5 +15,5 @@ export function buildCsv(headers, rows, valuesForRow = row => row) {
     ...rows.map(row => valuesForRow(row).map(escapeCsvCell).join(';')),
   ];
 
-  return `\\uFEFF${lines.join('\\r\\n')}\\r\\n`;
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
